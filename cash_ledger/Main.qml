@@ -260,7 +260,124 @@ ApplicationWindow {
                 anchors.margins: 15
                 spacing: 9
 
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+                    LedgerButton {
+                        id: findNumberButton
+                        objectName: "findNumberButton"
+                        Layout.fillWidth: true
+                        text: "Търси"
+                        Accessible.name: "Търси по номер"
+                        onClicked: numberSearch.open()
+                        contentItem: RowLayout {
+                            spacing: 6
+                            Item { Layout.fillWidth: true }
+                            Item {
+                                Layout.preferredWidth: 12
+                                Layout.preferredHeight: 12
+                                Rectangle { width: 8; height: 8; radius: 4; color: "transparent"; border.color: win.accent }
+                                Rectangle { x: 6; y: 8; width: 6; height: 1; rotation: 45; color: win.accent }
+                            }
+                            LedgerText { text: findNumberButton.text }
+                            Item { Layout.fillWidth: true }
+                        }
+                    }
+                    LedgerButton { text: "Днес"; visible: !win.controller.isToday; onClicked: win.showStatus(win.controller.goToday()) }
+                }
+
                 Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: dateStrip.implicitHeight + 6
+                    radius: 10
+                    color: win.paper
+                    border.color: win.line
+
+                    RowLayout {
+                        id: dateStrip
+                        anchors.fill: parent
+                        anchors.margins: 3
+                        spacing: 2
+                        LedgerButton {
+                            text: "‹"
+                            leftPadding: 7
+                            rightPadding: 7
+                            quiet: true
+                            Accessible.name: "Предишен ден"
+                            onClicked: win.showStatus(win.controller.shiftDay(-1))
+                        }
+                        LedgerButton {
+                            id: dateButton
+                            objectName: "datePickerButton"
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            leftPadding: 3
+                            rightPadding: 3
+                            text: win.controller.dateText
+                            quiet: true
+                            highlighted: datePicker.opened
+                            Accessible.name: "Избери дата, " + text
+                            onClicked: datePicker.opened ? datePicker.close() : datePicker.open()
+                            contentItem: RowLayout {
+                                spacing: 4
+                                Item {
+                                    Layout.preferredWidth: 13
+                                    Layout.preferredHeight: 13
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        anchors.topMargin: 2
+                                        radius: 2
+                                        color: "transparent"
+                                        border.color: win.accent
+                                    }
+                                    Rectangle { x: 1; y: 5; width: 11; height: 1; color: win.accent }
+                                    Rectangle { x: 3; width: 1; height: 4; color: win.accent }
+                                    Rectangle { x: 9; width: 1; height: 4; color: win.accent }
+                                }
+                                LedgerText {
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    text: dateButton.text
+                                    font.weight: Font.DemiBold
+                                    horizontalAlignment: Text.AlignHCenter
+                                    fontSizeMode: Text.HorizontalFit
+                                    minimumPixelSize: 10
+                                }
+                            }
+                            CalendarPicker {
+                                id: datePicker
+                                parent: dateButton
+                                selectedIso: win.controller.dateIso
+                                todayIso: win.controller.todayIso
+                                tones: ({
+                                    surface: win.paper, text: win.ink, muted: win.muted, line: win.line,
+                                    accent: win.accent, onAccent: win.accentText, hover: win.positiveBg,
+                                    shadow: win.dark ? "#55000000" : "#20192426"
+                                })
+                                onDateChosen: iso => {
+                                    const problem = win.controller.goTo(iso)
+                                    win.showStatus(problem)
+                                    if (!problem) {
+                                        close()
+                                        dateButton.forceActiveFocus()
+                                    }
+                                }
+                            }
+                        }
+                        LedgerButton {
+                            text: "›"
+                            leftPadding: 7
+                            rightPadding: 7
+                            quiet: true
+                            enabled: !win.controller.isToday
+                            Accessible.name: "Следващ ден"
+                            onClicked: win.showStatus(win.controller.shiftDay(1))
+                        }
+                    }
+                }
+
+                Rectangle {
+                    objectName: "balanceCard"
                     Layout.fillWidth: true
                     implicitHeight: 88
                     radius: 11
@@ -335,101 +452,7 @@ ApplicationWindow {
             Layout.margins: 16
             spacing: 10
 
-            RowLayout {
-                Layout.fillWidth: true
-                LedgerText { text: "Операции"; font.pixelSize: 23; font.weight: Font.DemiBold }
-                Item { Layout.fillWidth: true }
-                LedgerButton {
-                    objectName: "findNumberButton"
-                    text: "Търси"
-                    Accessible.name: "Търси по номер"
-                    onClicked: numberSearch.open()
-                    contentItem: RowLayout {
-                        spacing: 6
-                        Item {
-                            Layout.preferredWidth: 12
-                            Layout.preferredHeight: 12
-                            Rectangle { width: 8; height: 8; radius: 4; color: "transparent"; border.color: win.accent }
-                            Rectangle { x: 6; y: 8; width: 6; height: 1; rotation: 45; color: win.accent }
-                        }
-                        LedgerText { text: "Търси" }
-                    }
-                }
-                LedgerButton { text: "Днес"; visible: !win.controller.isToday; onClicked: win.showStatus(win.controller.goToday()) }
-                Rectangle {
-                    implicitWidth: dateStrip.implicitWidth + 6
-                    implicitHeight: dateStrip.implicitHeight + 6
-                    radius: 10
-                    color: win.paper
-                    border.color: win.line
-
-                    RowLayout {
-                        id: dateStrip
-                        anchors.fill: parent
-                        anchors.margins: 3
-                        spacing: 2
-                        LedgerButton {
-                            text: "‹"
-                            quiet: true
-                            Accessible.name: "Предишен ден"
-                            onClicked: win.showStatus(win.controller.shiftDay(-1))
-                        }
-                        LedgerButton {
-                            id: dateButton
-                            objectName: "datePickerButton"
-                            text: win.controller.dateText
-                            quiet: true
-                            highlighted: datePicker.opened
-                            Accessible.name: "Избери дата, " + text
-                            onClicked: datePicker.opened ? datePicker.close() : datePicker.open()
-                            contentItem: RowLayout {
-                                spacing: 7
-                                Item {
-                                    Layout.preferredWidth: 13
-                                    Layout.preferredHeight: 13
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        anchors.topMargin: 2
-                                        radius: 2
-                                        color: "transparent"
-                                        border.color: win.accent
-                                    }
-                                    Rectangle { x: 1; y: 5; width: 11; height: 1; color: win.accent }
-                                    Rectangle { x: 3; width: 1; height: 4; color: win.accent }
-                                    Rectangle { x: 9; width: 1; height: 4; color: win.accent }
-                                }
-                                LedgerText { text: dateButton.text; font.weight: Font.DemiBold }
-                            }
-                            CalendarPicker {
-                                id: datePicker
-                                parent: dateButton
-                                selectedIso: win.controller.dateIso
-                                todayIso: win.controller.todayIso
-                                tones: ({
-                                    surface: win.paper, text: win.ink, muted: win.muted, line: win.line,
-                                    accent: win.accent, onAccent: win.accentText, hover: win.positiveBg,
-                                    shadow: win.dark ? "#55000000" : "#20192426"
-                                })
-                                onDateChosen: iso => {
-                                    const problem = win.controller.goTo(iso)
-                                    win.showStatus(problem)
-                                    if (!problem) {
-                                        close()
-                                        dateButton.forceActiveFocus()
-                                    }
-                                }
-                            }
-                        }
-                        LedgerButton {
-                            text: "›"
-                            quiet: true
-                            enabled: !win.controller.isToday
-                            Accessible.name: "Следващ ден"
-                            onClicked: win.showStatus(win.controller.shiftDay(1))
-                        }
-                    }
-                }
-            }
+            LedgerText { text: "Операции"; font.pixelSize: 23; font.weight: Font.DemiBold }
 
             Rectangle {
                 Layout.fillWidth: true

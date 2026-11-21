@@ -22,7 +22,7 @@ Popup {
     width: 326
     padding: 12
     margins: 8
-    x: parent.width - width
+    x: 0
     y: parent.height + 7
     focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent

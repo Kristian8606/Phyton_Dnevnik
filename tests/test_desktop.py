@@ -100,6 +100,7 @@ class DesktopTests(unittest.TestCase):
             engine, controller = make_window(database)
             try:
                 window: QQuickWindow = engine.rootObjects()[0]
+                window.resize(760, 520)
                 app.processEvents()
 
                 def item(name):
@@ -111,6 +112,17 @@ class DesktopTests(unittest.TestCase):
                     point = control.mapToScene(QPointF(control.width() / 2, control.height() / 2)).toPoint()
                     QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, point)
                     app.processEvents()
+
+                self.assertEqual(controller.goTo("2024-09-30"), "")
+                balance = item("balanceCard")
+                balance_top = balance.mapToScene(QPointF())
+                for name in ("findNumberButton", "datePickerButton"):
+                    control = item(name)
+                    upper_left = control.mapToScene(QPointF())
+                    lower_right = control.mapToScene(QPointF(control.width(), control.height()))
+                    self.assertGreaterEqual(upper_left.x(), balance_top.x())
+                    self.assertLessEqual(lower_right.x(), balance_top.x() + balance.width())
+                    self.assertLessEqual(lower_right.y(), balance_top.y())
 
                 self.assertEqual(controller.goTo("2024-02-12"), "")
                 click(item("datePickerButton"))
