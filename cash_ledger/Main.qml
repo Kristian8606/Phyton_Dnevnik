@@ -1,12 +1,14 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs as NativeDialogs
 import QtQuick.Layouts
 
 ApplicationWindow {
     id: win
     required property QtObject controller
     visible: true
-    title: "Касов дневник"
+    property bool testMode: false
+    title: testMode ? "Касов дневник · Тестови дни" : "Касов дневник"
     width: Math.max(800, Math.min(1400, Screen.desktopAvailableWidth - 28))
     height: Math.max(540, Math.min(760, Screen.desktopAvailableHeight - 60))
     minimumWidth: 760
@@ -26,6 +28,12 @@ ApplicationWindow {
     readonly property color accent: dark ? "#a1dfcc" : "#175d52"
     readonly property color accentText: dark ? "#102b26" : "#ffffff"
     readonly property color cashBackdrop: dark ? "#22483f" : "#19483f"
+    readonly property color balancePane: dark ? "#102626" : "#103736"
+    readonly property color balanceLine: "#4c8a81"
+    readonly property color balanceInk: "#f3fbf8"
+    readonly property color balanceMuted: "#b6d9d3"
+    readonly property color matchSurface: dark ? "#244954" : "#e0f2fa"
+    readonly property color matchEdge: dark ? "#83c8dd" : "#237c95"
     readonly property color positive: dark ? "#a6e1c4" : "#13614d"
     readonly property color positiveBg: dark ? "#243d35" : "#e6f2ee"
     readonly property color negative: dark ? "#f5bb96" : "#854a26"
@@ -43,6 +51,7 @@ ApplicationWindow {
     property string weightProblem: ""
     property string statusMessage: ""
     property bool statusError: false
+    property var searchSelection: null
 
     function cellWidth(index) {
         return controller.widths[index] + Math.max(0, tableScroll.width - baseWidth) / controller.columns.length
@@ -89,12 +98,46 @@ ApplicationWindow {
         statusMessage = message
         statusError = message.length > 0
     }
+    function showResult(result) {
+        statusMessage = result.message
+        statusError = !result.ok
+    }
+    function openOperation(block, operationId, field) {
+        const record = controller.openEdit(block, operationId)
+        if (!record.ok) {
+            showResult(record)
+            return
+        }
+        editDialog.title = record.title
+        editDialog.operationDate = record.date
+        editDialog.fields = record.fields
+        editDialog.initialField = field
+        editDialog.errorText = ""
+        editDialog.weightProblem = ""
+        editDialog.open()
+    }
     function ensureFieldVisible(left, width) {
         if (left < tableScroll.contentX)
             tableScroll.contentX = left
         else if (left + width > tableScroll.contentX + tableScroll.width)
             tableScroll.contentX = left + width - tableScroll.width
     }
+    function openMatch(match) {
+        const result = controller.goToSearchMatch(match.iso, match.block, match.id)
+        if (!result.ok) {
+            numberSearch.message = result.message
+            return
+        }
+        searchSelection = match
+        showStatus("")
+        numberSearch.close()
+        Qt.callLater(() => {
+            operations.positionViewAtIndex(result.row, ListView.Contain)
+            ensureFieldVisible(groupWidth({ first: 0, count: result.column }), cellWidth(result.column))
+        })
+    }
+
+    Shortcut { sequences: [StandardKey.Find]; onActivated: numberSearch.open() }
 
     component LedgerText: Label {
         color: win.ink
@@ -102,9 +145,16 @@ ApplicationWindow {
         verticalAlignment: Text.AlignVCenter
     }
 
+    component ReportAmount: LedgerText {
+        Layout.fillWidth: true
+        Layout.preferredWidth: 120
+        horizontalAlignment: Text.AlignRight
+    }
+
     component LedgerButton: Button {
         id: control
         property bool primary: false
+        property bool quiet: false
         padding: 8
         leftPadding: 11
         rightPadding: 11
@@ -117,11 +167,11 @@ ApplicationWindow {
             horizontalAlignment: Text.AlignHCenter
         }
         background: Rectangle {
-            radius: 5
-            color: control.primary ? win.accent :
-                   (control.hovered ? win.positiveBg : win.paper)
+            radius: 7
+            color: control.primary ? (control.down ? Qt.darker(win.accent, 1.1) : win.accent) :
+                   (control.hovered || control.highlighted ? win.positiveBg : (control.quiet ? "transparent" : win.paper))
             opacity: control.enabled ? 1 : 0.45
-            border.color: control.activeFocus ? win.accent : win.line
+            border.color: control.activeFocus ? win.accent : (control.quiet ? "transparent" : win.line)
         }
     }
 
@@ -144,7 +194,7 @@ ApplicationWindow {
     }
 
     header: Rectangle {
-        height: 48
+        height: 54
         color: win.paper
         RowLayout {
             anchors.fill: parent
@@ -152,14 +202,44 @@ ApplicationWindow {
             anchors.rightMargin: 16
             spacing: 9
             Rectangle {
-                implicitWidth: 24
-                implicitHeight: 24
+                implicitWidth: 28
+                implicitHeight: 28
                 color: win.positiveBg
-                radius: 5
+                radius: 8
                 LedgerText { anchors.centerIn: parent; text: "≡"; color: win.accent; font.pixelSize: 17 }
             }
-            LedgerText { text: "Касов дневник"; font.pixelSize: 15; font.weight: Font.DemiBold }
+            LedgerText { text: "Касов дневник"; font.pixelSize: 16; font.weight: Font.DemiBold }
+            LedgerText {
+                visible: win.testMode
+                text: "Тестова база"
+                color: win.accent
+                font.weight: Font.DemiBold
+            }
             Item { Layout.fillWidth: true }
+            LedgerButton {
+                objectName: "cashReportButton"
+                text: "Каса по дни"
+                onClicked: {
+                    const report = win.controller.cashReport()
+                    if (report.ok) {
+                        cashReportDialog.days = report.days
+                        cashReportDialog.open()
+                    } else {
+                        win.showResult(report)
+                    }
+                }
+            }
+            LedgerButton {
+                id: archiveButton
+                text: "Архив"
+                onClicked: archiveMenu.open()
+                Menu {
+                    id: archiveMenu
+                    y: archiveButton.height
+                    MenuItem { text: "Създай архив…"; onTriggered: backupPicker.open() }
+                    MenuItem { text: "Възстанови от архив…"; onTriggered: restorePicker.open() }
+                }
+            }
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: win.line }
     }
@@ -169,39 +249,59 @@ ApplicationWindow {
         spacing: 0
 
         Rectangle {
-            Layout.preferredWidth: 178
+            Layout.preferredWidth: 214
             Layout.fillHeight: true
-            color: win.sidebar
-            Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: win.line }
+            color: win.balancePane
 
             ColumnLayout {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
-                anchors.margins: 12
-                spacing: 7
+                anchors.margins: 15
+                spacing: 9
 
                 Rectangle {
                     Layout.fillWidth: true
-                    implicitHeight: 72
-                    color: win.cashBackdrop
-                    radius: 7
+                    implicitHeight: 88
+                    radius: 11
+                    gradient: Gradient {
+                        GradientStop { position: 0; color: "#245e55" }
+                        GradientStop { position: 1; color: win.cashBackdrop }
+                    }
                     ColumnLayout {
                         anchors.fill: parent
-                        anchors.margins: 10
-                        spacing: 3
-                        LedgerText { text: "Каса към датата"; color: "#c4ded7"; font.pixelSize: 11 }
+                        anchors.margins: 12
+                        spacing: 4
+                        LedgerText { text: "Каса към датата"; color: win.balanceMuted; font.pixelSize: 12 }
                         LedgerText {
                             Layout.fillWidth: true
                             text: win.controller.summary.cash
-                            color: "#f4fbf9"
-                            font.pixelSize: 23
+                            color: win.balanceInk
+                            font.pixelSize: 27
                             font.weight: Font.Bold
                             fontSizeMode: Text.HorizontalFit
                             minimumPixelSize: 11
                         }
                     }
                 }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    LedgerText { text: "Пренос от предния ден"; color: win.balanceMuted; font.pixelSize: 11 }
+                    LedgerText {
+                        objectName: "carriedCash"
+                        Layout.fillWidth: true
+                        text: win.controller.summary.carried
+                        color: win.balanceInk
+                        font.pixelSize: 15
+                        font.weight: Font.DemiBold
+                        fontSizeMode: Text.HorizontalFit
+                        minimumPixelSize: 11
+                    }
+                }
+
+                Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: win.balanceLine; opacity: 0.55 }
 
                 Repeater {
                     model: [
@@ -212,11 +312,12 @@ ApplicationWindow {
                         required property var modelData
                         Layout.fillWidth: true
                         Layout.preferredHeight: 29
-                        LedgerText { text: parent.modelData.label; color: win.muted; font.pixelSize: 11 }
+                        LedgerText { text: parent.modelData.label; color: win.balanceMuted; font.pixelSize: 12 }
                         Item { Layout.fillWidth: true }
                         LedgerText {
                             Layout.fillWidth: true
                             text: win.controller.summary[parent.modelData.key]
+                            color: win.balanceInk
                             horizontalAlignment: Text.AlignRight
                             fontSizeMode: Text.HorizontalFit
                             minimumPixelSize: 10
@@ -225,48 +326,108 @@ ApplicationWindow {
                     }
                 }
 
-                LedgerButton {
-                    Layout.fillWidth: true
-                    text: "Начална каса"
-                    onClicked: {
-                        openingEdit.text = win.controller.openingText
-                        openingError.text = ""
-                        openingDialog.open()
-                        openingEdit.selectAll()
-                        openingEdit.forceActiveFocus()
-                    }
-                }
             }
         }
 
         ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.margins: 13
-            spacing: 9
+            Layout.margins: 16
+            spacing: 10
 
             RowLayout {
                 Layout.fillWidth: true
-                LedgerText { text: "Операции"; font.pixelSize: 21; font.weight: Font.DemiBold }
+                LedgerText { text: "Операции"; font.pixelSize: 23; font.weight: Font.DemiBold }
                 Item { Layout.fillWidth: true }
-                LedgerButton { text: "Днес"; visible: !win.controller.isToday; onClicked: win.showStatus(win.controller.goToday()) }
-                LedgerButton { text: "‹"; Accessible.name: "Предишен ден"; onClicked: win.showStatus(win.controller.shiftDay(-1)) }
                 LedgerButton {
-                    text: win.controller.dateText
-                    Accessible.name: "Избери дата"
-                    onClicked: {
-                        dateEdit.text = win.controller.dateIso
-                        dateError.text = ""
-                        dateDialog.open()
-                        dateEdit.selectAll()
-                        dateEdit.forceActiveFocus()
+                    objectName: "findNumberButton"
+                    text: "Търси"
+                    Accessible.name: "Търси по номер"
+                    onClicked: numberSearch.open()
+                    contentItem: RowLayout {
+                        spacing: 6
+                        Item {
+                            Layout.preferredWidth: 12
+                            Layout.preferredHeight: 12
+                            Rectangle { width: 8; height: 8; radius: 4; color: "transparent"; border.color: win.accent }
+                            Rectangle { x: 6; y: 8; width: 6; height: 1; rotation: 45; color: win.accent }
+                        }
+                        LedgerText { text: "Търси" }
                     }
                 }
-                LedgerButton {
-                    text: "›"
-                    enabled: !win.controller.isToday
-                    Accessible.name: "Следващ ден"
-                    onClicked: win.showStatus(win.controller.shiftDay(1))
+                LedgerButton { text: "Днес"; visible: !win.controller.isToday; onClicked: win.showStatus(win.controller.goToday()) }
+                Rectangle {
+                    implicitWidth: dateStrip.implicitWidth + 6
+                    implicitHeight: dateStrip.implicitHeight + 6
+                    radius: 10
+                    color: win.paper
+                    border.color: win.line
+
+                    RowLayout {
+                        id: dateStrip
+                        anchors.fill: parent
+                        anchors.margins: 3
+                        spacing: 2
+                        LedgerButton {
+                            text: "‹"
+                            quiet: true
+                            Accessible.name: "Предишен ден"
+                            onClicked: win.showStatus(win.controller.shiftDay(-1))
+                        }
+                        LedgerButton {
+                            id: dateButton
+                            objectName: "datePickerButton"
+                            text: win.controller.dateText
+                            quiet: true
+                            highlighted: datePicker.opened
+                            Accessible.name: "Избери дата, " + text
+                            onClicked: datePicker.opened ? datePicker.close() : datePicker.open()
+                            contentItem: RowLayout {
+                                spacing: 7
+                                Item {
+                                    Layout.preferredWidth: 13
+                                    Layout.preferredHeight: 13
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        anchors.topMargin: 2
+                                        radius: 2
+                                        color: "transparent"
+                                        border.color: win.accent
+                                    }
+                                    Rectangle { x: 1; y: 5; width: 11; height: 1; color: win.accent }
+                                    Rectangle { x: 3; width: 1; height: 4; color: win.accent }
+                                    Rectangle { x: 9; width: 1; height: 4; color: win.accent }
+                                }
+                                LedgerText { text: dateButton.text; font.weight: Font.DemiBold }
+                            }
+                            CalendarPicker {
+                                id: datePicker
+                                parent: dateButton
+                                selectedIso: win.controller.dateIso
+                                todayIso: win.controller.todayIso
+                                tones: ({
+                                    surface: win.paper, text: win.ink, muted: win.muted, line: win.line,
+                                    accent: win.accent, onAccent: win.accentText, hover: win.positiveBg,
+                                    shadow: win.dark ? "#55000000" : "#20192426"
+                                })
+                                onDateChosen: iso => {
+                                    const problem = win.controller.goTo(iso)
+                                    win.showStatus(problem)
+                                    if (!problem) {
+                                        close()
+                                        dateButton.forceActiveFocus()
+                                    }
+                                }
+                            }
+                        }
+                        LedgerButton {
+                            text: "›"
+                            quiet: true
+                            enabled: !win.controller.isToday
+                            Accessible.name: "Следващ ден"
+                            onClicked: win.showStatus(win.controller.shiftDay(1))
+                        }
+                    }
                 }
             }
 
@@ -344,7 +505,7 @@ ApplicationWindow {
                         ListView {
                             id: operations
                             width: tableScroll.contentWidth
-                            height: Math.max(0, tableScroll.height - groupHeader.height - columnHeader.height - subtotals.height - entryRow.height - 10)
+                            height: Math.max(0, tableScroll.height - groupHeader.height - columnHeader.height - entryRow.height - 10)
                             model: win.controller.rows
                             clip: true
                             boundsBehavior: Flickable.StopAtBounds
@@ -362,12 +523,32 @@ ApplicationWindow {
                                         required property int index
                                         required property var modelData
                                         readonly property var value: operation.cells[index]
+                                        objectName: "saved_" + operation.index + "_" + modelData.key
+                                        readonly property bool isSearchMatch: win.searchSelection !== null &&
+                                            win.searchSelection.iso === win.controller.dateIso &&
+                                            win.searchSelection.block === modelData.block &&
+                                            win.searchSelection.id === value.operationId
                                         width: win.cellWidth(index)
                                         height: operation.height
-                                        color: operation.index % 2 ? win.alternate : win.paper
+                                        color: isSearchMatch ? win.matchSurface :
+                                               (editClick.containsMouse ? win.positiveBg : (operation.index % 2 ? win.alternate : win.paper))
                                         divided: index !== 0
                                         groupDivider: modelData.split
+                                        Rectangle {
+                                            width: parent.width
+                                            height: 2
+                                            color: win.matchEdge
+                                            visible: bodyCell.isSearchMatch
+                                        }
 
+                                        MouseArea {
+                                            id: editClick
+                                            anchors.fill: parent
+                                            enabled: bodyCell.value.operationId !== ""
+                                            hoverEnabled: enabled
+                                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                            onClicked: win.openOperation(bodyCell.modelData.block, bodyCell.value.operationId, bodyCell.modelData.key)
+                                        }
                                         Column {
                                             anchors.left: parent.left
                                             anchors.right: parent.right
@@ -426,30 +607,6 @@ ApplicationWindow {
                         }
 
                         Row {
-                            id: subtotals
-                            height: 31
-                            Repeater {
-                                model: win.controller.columns
-                                delegate: ColumnCell {
-                                    required property int index
-                                    required property var modelData
-                                    width: win.cellWidth(index)
-                                    height: subtotals.height
-                                    color: win.headerSurface
-                                    divided: index !== 0
-                                    groupDivider: modelData.split
-                                    LedgerText {
-                                        anchors.fill: parent
-                                        anchors.margins: 7
-                                        text: parent.index === 0 ? "Общо" : win.controller.totals[parent.index]
-                                        horizontalAlignment: parent.modelData.number ? Text.AlignRight : Text.AlignLeft
-                                        font.weight: Font.DemiBold
-                                    }
-                                }
-                            }
-                        }
-
-                        Row {
                             id: entryRow
                             height: 40
                             Repeater {
@@ -489,7 +646,7 @@ ApplicationWindow {
                                             radius: 4
                                         }
                                         onTextChanged: {
-                                            if (inputCell.modelData.weight)
+                                            if (inputCell.modelData.weight || inputCell.modelData.key === "marker")
                                                 win.weightProblem = win.controller.draftWeightError(win.draft())
                                         }
                                         onActiveFocusChanged: {
@@ -515,81 +672,271 @@ ApplicationWindow {
                 }
             }
 
+            LedgerText {
+                objectName: "weightWarning"
+                Layout.fillWidth: true
+                visible: text !== ""
+                text: win.weightProblem || win.statusMessage
+                color: win.weightProblem || win.statusError ? win.warningColor : win.muted
+                wrapMode: Text.WordWrap
+                Accessible.role: Accessible.StaticText
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: bottomBar.implicitHeight + 12
+                color: win.paper
+                border.color: win.line
+                radius: 8
+
+                RowLayout {
+                    id: bottomBar
+                    anchors.fill: parent
+                    anchors.leftMargin: 10
+                    anchors.rightMargin: 8
+                    anchors.topMargin: 6
+                    anchors.bottomMargin: 6
+                    spacing: 12
+                    Flow {
+                        id: summaryFlow
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: implicitHeight
+                        spacing: 13
+                        Row {
+                            height: 28
+                            spacing: 6
+                            LedgerText { objectName: "receiptsLabel"; height: parent.height; text: "Постъпления"; color: win.muted; font.pixelSize: 11 }
+                            LedgerText { height: parent.height; text: win.controller.summary.incoming; color: win.positive; font.weight: Font.DemiBold }
+                        }
+                        Row {
+                            height: 28
+                            spacing: 6
+                            LedgerText { height: parent.height; text: "Плащания"; color: win.muted; font.pixelSize: 11 }
+                            LedgerText { height: parent.height; text: win.controller.summary.outgoing; color: win.negative; font.weight: Font.DemiBold }
+                        }
+                        Rectangle {
+                            width: movement.implicitWidth + 16
+                            height: 28
+                            radius: 6
+                            color: win.headerSurface
+                            Row {
+                                id: movement
+                                anchors.centerIn: parent
+                                spacing: 6
+                                LedgerText { text: "Движение за деня"; color: win.muted; font.pixelSize: 11; height: 24 }
+                                LedgerText { text: win.controller.summary.net; font.weight: Font.DemiBold; height: 24 }
+                            }
+                        }
+                    }
+                    LedgerButton {
+                        objectName: "saveOperationButton"
+                        Layout.preferredHeight: 28
+                        Layout.alignment: Qt.AlignTop
+                        text: win.controller.isToday ? "Запиши" : "Запиши за днес"
+                        primary: true
+                        onClicked: win.submit(-1)
+                    }
+                }
+            }
+        }
+    }
+
+    NumberSearch {
+        id: numberSearch
+        anchors.centerIn: Overlay.overlay
+        controller: win.controller
+        tones: ({
+            surface: win.paper, text: win.ink, muted: win.muted, line: win.line,
+            accent: win.accent, onAccent: win.accentText, hover: win.positiveBg, alternate: win.alternate
+        })
+        onMatchChosen: match => win.openMatch(match)
+    }
+
+    Dialog {
+        id: cashReportDialog
+        anchors.centerIn: Overlay.overlay
+        modal: true
+        width: Math.min(610, win.width - 32)
+        title: "Каса за последните 7 дни"
+        property var days: []
+        contentItem: ColumnLayout {
+            spacing: 4
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 9
-                LedgerText {
-                    text: win.controller.isToday ? "Бързо въвеждане" : "Бързо въвеждане за днес"
-                    font.weight: Font.DemiBold
-                }
-                LedgerText {
-                    objectName: "weightWarning"
+                LedgerText { Layout.preferredWidth: 116; text: "Дата"; color: win.muted }
+                ReportAmount { text: "Пренос"; color: win.muted }
+                ReportAmount { text: "Движение"; color: win.muted }
+                ReportAmount { text: "Каса"; color: win.muted }
+            }
+            Repeater {
+                model: cashReportDialog.days
+                delegate: RowLayout {
+                    id: reportRow
+                    required property var modelData
                     Layout.fillWidth: true
-                    text: win.weightProblem || win.statusMessage
-                    color: win.weightProblem || win.statusError ? win.warningColor : win.muted
-                    wrapMode: Text.WordWrap
-                    Accessible.role: Accessible.StaticText
+                    LedgerButton {
+                        objectName: "report_day_" + reportRow.modelData.iso
+                        Layout.preferredWidth: 116
+                        text: reportRow.modelData.date
+                        onClicked: {
+                            win.showStatus(win.controller.goTo(reportRow.modelData.iso))
+                            cashReportDialog.close()
+                        }
+                    }
+                    ReportAmount { text: reportRow.modelData.carried }
+                    ReportAmount { text: reportRow.modelData.movement }
+                    ReportAmount {
+                        text: reportRow.modelData.closing
+                        font.weight: Font.DemiBold
+                    }
                 }
-                LedgerButton { text: "Запиши"; primary: true; onClicked: win.submit(-1) }
             }
+            LedgerButton { Layout.alignment: Qt.AlignRight; text: "Затвори"; onClicked: cashReportDialog.close() }
+        }
+    }
 
+    Dialog {
+        id: editDialog
+        anchors.centerIn: Overlay.overlay
+        modal: true
+        width: Math.min(460, win.width - 32)
+        property var fields: []
+        property string initialField: ""
+        property string operationDate: ""
+        property string weightProblem: ""
+        property string errorText: ""
+
+        onOpened: {
+            weightProblem = win.controller.draftWeightError(draft())
+            const index = fields.findIndex(field => field.key === initialField)
+            if (index < 0)
+                return
+            const editor = editFields.itemAt(index).editor
+            editor.forceActiveFocus()
+            const separator = editor.text.indexOf(" ")
+            if (separator > 0 && /^[0-9]/.test(editor.text))
+                editor.select(0, separator)
+            else
+                editor.selectAll()
+        }
+
+        function draft() {
+            const values = {}
+            for (let index = 0; index < editFields.count; index++) {
+                const editor = editFields.itemAt(index)
+                if (editor)
+                    values[editor.modelData.key] = editor.editor.text
+            }
+            return values
+        }
+        function saveChanges() {
+            if (weightProblem)
+                return
+            const result = win.controller.saveEdit(draft())
+            if (!result.ok) {
+                errorText = result.message
+                return
+            }
+            close()
+            win.showResult(result)
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 6
+            LedgerText { text: editDialog.operationDate; color: win.muted }
+            Repeater {
+                id: editFields
+                model: editDialog.fields
+                delegate: RowLayout {
+                    id: editRow
+                    required property var modelData
+                    property alias editor: editInput
+                    Layout.fillWidth: true
+                    LedgerText { text: editRow.modelData.label; Layout.preferredWidth: 175; wrapMode: Text.Wrap }
+                    TextField {
+                        id: editInput
+                        objectName: "edit_" + editRow.modelData.key
+                        Layout.fillWidth: true
+                        Accessible.name: editRow.modelData.label
+                        text: editRow.modelData.text
+                        color: win.ink
+                        readonly property bool conflict: editRow.modelData.weight && text.trim() !== "" && editDialog.weightProblem !== ""
+                        background: Rectangle {
+                            radius: 4
+                            color: win.paper
+                            border.color: editInput.conflict ? win.warningColor : (editInput.activeFocus ? win.accent : win.line)
+                        }
+                        onTextChanged: {
+                            editDialog.errorText = ""
+                            if (editRow.modelData.weight || editRow.modelData.key === "marker")
+                                editDialog.weightProblem = win.controller.draftWeightError(editDialog.draft())
+                        }
+                        onAccepted: editDialog.saveChanges()
+                    }
+                }
+            }
+            LedgerText {
+                objectName: "editWeightWarning"
+                Layout.fillWidth: true
+                text: editDialog.weightProblem || editDialog.errorText
+                color: win.warningColor
+                wrapMode: Text.WordWrap
+                visible: text !== ""
+            }
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 13
                 Item { Layout.fillWidth: true }
-                LedgerText { text: "Постъпления"; color: win.muted; font.pixelSize: 11 }
-                LedgerText { text: win.controller.summary.incoming; color: win.positive; font.weight: Font.DemiBold }
-                LedgerText { text: "Плащания"; color: win.muted; font.pixelSize: 11 }
-                LedgerText { text: win.controller.summary.outgoing; color: win.negative; font.weight: Font.DemiBold }
-                LedgerText { text: "Движение за деня"; color: win.muted; font.pixelSize: 11 }
-                LedgerText { text: win.controller.summary.net; font.weight: Font.DemiBold }
+                LedgerButton { text: "Отказ"; onClicked: editDialog.close() }
+                LedgerButton { text: "Запиши"; primary: true; onClicked: editDialog.saveChanges() }
             }
         }
     }
 
-    Dialog {
-        id: openingDialog
-        anchors.centerIn: Overlay.overlay
-        modal: true
-        title: "Начална каса"
-        function saveOpening() {
-            openingError.text = win.controller.setOpening(openingEdit.text)
-            if (!openingError.text)
-                close()
-        }
-        contentItem: ColumnLayout {
-            spacing: 9
-            LedgerText { text: "Салдо преди първия запис (€)" }
-            TextField { id: openingEdit; Layout.fillWidth: true; onAccepted: openingDialog.saveOpening() }
-            LedgerText { id: openingError; Layout.fillWidth: true; visible: text !== ""; color: win.warningColor }
-            RowLayout {
-                Item { Layout.fillWidth: true }
-                LedgerButton { text: "Отказ"; onClicked: openingDialog.close() }
-                LedgerButton { text: "Запиши"; primary: true; onClicked: openingDialog.saveOpening() }
-            }
+    NativeDialogs.FileDialog {
+        id: backupPicker
+        title: "Създай архив на касовия дневник"
+        fileMode: NativeDialogs.FileDialog.SaveFile
+        defaultSuffix: "sqlite3"
+        options: NativeDialogs.FileDialog.DontConfirmOverwrite
+        nameFilters: ["SQLite (*.sqlite3 *.sqlite)"]
+        onAccepted: win.showResult(win.controller.createArchive(selectedFile))
+    }
+    NativeDialogs.FileDialog {
+        id: restorePicker
+        title: "Избери архив на касовия дневник"
+        nameFilters: ["SQLite (*.sqlite3 *.sqlite)", "Всички файлове (*)"]
+        onAccepted: {
+            restoreConfirm.archive = selectedFile
+            restoreConfirm.open()
         }
     }
-
     Dialog {
-        id: dateDialog
+        id: restoreConfirm
         anchors.centerIn: Overlay.overlay
         modal: true
-        title: "Избор на дата"
-        function selectDate() {
-            dateError.text = win.controller.goTo(dateEdit.text.trim())
-            if (!dateError.text) {
-                win.showStatus("")
-                close()
-            }
-        }
+        title: "Възстановяване от архив"
+        width: 390
+        property url archive
         contentItem: ColumnLayout {
-            spacing: 9
-            TextField { id: dateEdit; Layout.fillWidth: true; placeholderText: "ГГГГ-ММ-ДД"; onAccepted: dateDialog.selectDate() }
-            LedgerText { id: dateError; Layout.fillWidth: true; visible: text !== ""; color: win.warningColor }
+            spacing: 10
+            LedgerText {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "Архивът ще замени текущите записи. Текущата база ще се запази в отделен архив преди възстановяването."
+            }
             RowLayout {
+                Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
-                LedgerButton { text: "Отказ"; onClicked: dateDialog.close() }
-                LedgerButton { text: "Покажи"; primary: true; onClicked: dateDialog.selectDate() }
+                LedgerButton { text: "Отказ"; onClicked: restoreConfirm.close() }
+                LedgerButton {
+                    text: "Възстанови"
+                    primary: true
+                    onClicked: {
+                        const result = win.controller.restoreArchive(restoreConfirm.archive)
+                        restoreConfirm.close()
+                        win.showResult(result)
+                    }
+                }
             }
         }
     }

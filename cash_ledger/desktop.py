@@ -9,7 +9,7 @@ from PySide6.QtGui import QFont, QFontMetrics
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
-from .ledger import Ledger, MONETARY, ValidationError, WEIGHTS, weight_error
+from .ledger import BLOCKS, Ledger, MONETARY, SEARCH_LIMIT, ValidationError, WEIGHTS, weight_error
 
 COLUMNS = (
     ("marker", "Пр.", "Маркер за продажба", "", 55),
@@ -27,7 +27,12 @@ COLUMNS = (
     ("buyGold", "К. З.", "Купено злато", "−", 77),
     ("buySilver", "К. С.", "Купено сребро", "−", 77),
 )
+FIELD_BLOCKS = {key: block for block, (fields, _) in BLOCKS.items() for key in fields}
+BLOCK_LABELS = {"contracts": "Договор или продажба", "cash_movements": "Приход / разход",
+                "pledges": "Залог", "purchases": "Покупка"}
+SEARCH_LABELS = {"sale": "Продажба", "contract": "Договор", "pledge": "Залог"}
 QML_COLUMNS = [{"key": key, "title": title, "label": label, "side": side, "width": width,
+                "block": FIELD_BLOCKS[key],
                 "weight": key in WEIGHTS, "number": key in (*MONETARY, *WEIGHTS), "split": index in (8, 10, 12)}
                for index, (key, title, label, side, width) in enumerate(COLUMNS)]
 STORE_ERROR = "Базата данни е недостъпна. "
@@ -43,7 +48,7 @@ def money(amount: int, signed: bool = False) -> str:
     return ("+" if signed and amount > 0 else "") + decimal_text(amount) + " €"
 
 
-def _screen_row(row):
+def _screen_row(row, operation_ids):
     cells = []
     for column in QML_COLUMNS:
         key = column["key"]
@@ -60,7 +65,8 @@ def _screen_row(row):
                 price = money(cell.unit_price) + "/г"
                 sale = row["interest"].value + row["principal"].value
                 calculation = f"{money(sale)} ÷ {text} г = {price}"
-        cells.append({"text": text, "note": note, "price": price, "calculation": calculation})
+        cells.append({"text": text, "note": note, "price": price, "calculation": calculation,
+                      "operationId": str(operation_ids.get(column["block"], ""))})
     return cells
 
 
@@ -97,28 +103,25 @@ class LedgerWindow(QObject):
         self._day = date.today()
         self._rows = DailyRows(self)
         self._summary = {}
-        self._totals = []
         self._widths = []
-        self._opening = 0
+        self._editing = None
+        self._operation_ids = []
         self._refresh()
 
     def _refresh(self):
         day = self._ledger.day(self._day)
-        display = [_screen_row(row) for row in day.rows]
-        self._totals = [decimal_text(day.totals[col["key"]]) if col["key"] in day.totals else ""
-                        for col in QML_COLUMNS]
+        self._operation_ids = day.operation_ids
+        display = [_screen_row(row, ids) for row, ids in zip(day.rows, day.operation_ids)]
         font = QFont()
         font.setPixelSize(15)
         font.setBold(True)
-        totals_metrics = QFontMetrics(font)
         weight_metrics = QFontMetrics(font)
         font.setBold(False)
         font.setPixelSize(13)
         text_metrics = QFontMetrics(font)
         font.setPixelSize(11)
         price_metrics = QFontMetrics(font)
-        self._widths = [max(col["width"], totals_metrics.horizontalAdvance(self._totals[index]) + 20)
-                        for index, col in enumerate(QML_COLUMNS)]
+        self._widths = [col["width"] for col in QML_COLUMNS]
         for row in display:
             for index, cell in enumerate(row):
                 value_metrics = weight_metrics if QML_COLUMNS[index]["weight"] else text_metrics
@@ -127,8 +130,8 @@ class LedgerWindow(QObject):
                                           price_metrics.horizontalAdvance(cell["price"]) + 20)
         self._summary = {key: money(amount, key in ("incoming", "net"))
                          for key, amount in day.summary.items()}
+        self._summary["carried"] = money(day.carried_cash)
         self._summary["outgoing"] = money(-day.summary["outgoing"])
-        self._opening = self._ledger.opening_cash()
         self._rows.replace(display)
         self.changed.emit()
 
@@ -144,10 +147,6 @@ class LedgerWindow(QObject):
     def widths(self):
         return self._widths
 
-    @Property("QVariantList", notify=changed)
-    def totals(self):
-        return self._totals
-
     @Property("QVariantMap", notify=changed)
     def summary(self):
         return self._summary
@@ -160,24 +159,13 @@ class LedgerWindow(QObject):
     def dateIso(self):
         return self._day.isoformat()
 
+    @Property(str, notify=changed)
+    def todayIso(self):
+        return date.today().isoformat()
+
     @Property(bool, notify=changed)
     def isToday(self):
         return self._day == date.today()
-
-    @Property(str, notify=changed)
-    def openingText(self):
-        return decimal_text(self._opening, grouping=False)
-
-    @Slot(str, result=str)
-    def setOpening(self, value):
-        try:
-            self._ledger.set_opening_cash(value)
-            self._refresh()
-        except ValidationError as error:
-            return str(error)
-        except sqlite3.Error as error:
-            return STORE_ERROR + str(error)
-        return ""
 
     @Slot(str, result=str)
     def goTo(self, value):
@@ -200,6 +188,48 @@ class LedgerWindow(QObject):
     @Slot(result=str)
     def goToday(self):
         return self._select(date.today())
+
+    @Slot(result="QVariantMap")
+    def cashReport(self):
+        try:
+            history = self._ledger.cash_by_day(date.today())
+        except sqlite3.Error as error:
+            return {"ok": False, "message": STORE_ERROR + str(error)}
+        return {"ok": True, "days": [
+            {
+                "date": line.day.strftime("%d.%m.%Y"),
+                "iso": line.day.isoformat(),
+                "carried": money(line.carried),
+                "movement": money(line.movement, signed=True),
+                "closing": money(line.closing),
+            }
+            for line in history
+        ]}
+
+    @Slot(str, result="QVariantMap")
+    def findNumber(self, query):
+        try:
+            matches = self._ledger.find_number(query)
+        except sqlite3.Error as error:
+            return {"ok": False, "message": STORE_ERROR + str(error)}
+        return {"ok": True, "truncated": len(matches) > SEARCH_LIMIT, "matches": [
+            {"block": match.block, "id": str(match.operation_id), "iso": match.day.isoformat(),
+             "date": match.day.strftime("%d.%m.%Y"), "number": match.number,
+             "label": SEARCH_LABELS[match.kind], "amount": money(match.amount)}
+            for match in matches[:SEARCH_LIMIT]
+        ]}
+
+    @Slot(str, str, str, result="QVariantMap")
+    def goToSearchMatch(self, iso, block, operation_id):
+        error = self.goTo(iso)
+        if error:
+            return {"ok": False, "message": error}
+        for index, ids in enumerate(self._operation_ids):
+            if block in ids and str(ids[block]) == operation_id:
+                field = "pledge" if block == "pledges" else "contract"
+                column = next(i for i, spec in enumerate(QML_COLUMNS) if spec["key"] == field)
+                return {"ok": True, "row": index, "column": column}
+        return {"ok": False, "message": "Операцията вече не е налична. Обнови търсенето."}
 
     def _select(self, target):
         previous = self._day
@@ -231,11 +261,76 @@ class LedgerWindow(QObject):
         return {"ok": True, "cleared": list(result.cleared), "pledge": result.next_pledge or "",
                 "message": message}
 
+    @Slot(str, str, result="QVariantMap")
+    def openEdit(self, block, operation_id):
+        self._editing = None
+        try:
+            record_id = int(operation_id)
+            cells = self._ledger.read_operation(self._day, block, record_id)
+        except (ValueError, sqlite3.Error) as error:
+            return {"ok": False, "message": str(error)}
+        self._editing = (self._day, block, record_id, cells)
+        fields = []
+        for column in QML_COLUMNS:
+            if column["block"] != block:
+                continue
+            cell = cells.get(column["key"])
+            text = ""
+            if cell is not None:
+                text = decimal_text(cell.value, grouping=False) if column["number"] else cell.value
+                if cell.note:
+                    text += " " + cell.note
+            fields.append({"key": column["key"], "label": column["label"],
+                           "weight": column["weight"], "text": text})
+        return {"ok": True, "fields": fields, "title": BLOCK_LABELS[block], "date": self.dateText}
 
-def make_window(database: Path):
-    QQuickStyle.setStyle("Basic")
+    @Slot("QVariantMap", result="QVariantMap")
+    def saveEdit(self, fields):
+        if self._editing is None:
+            return {"ok": False, "message": "Избери операция от таблицата."}
+        day, block, record_id, original = self._editing
+        try:
+            self._ledger.edit(day, block, record_id, fields, original)
+        except ValidationError as error:
+            return {"ok": False, "message": str(error)}
+        except sqlite3.Error as error:
+            return {"ok": False, "message": STORE_ERROR + str(error)}
+        self._editing = None
+        refresh_error = self._select(day)
+        return {"ok": True, "message": "Корекцията е записана. " + refresh_error}
+
+    @Slot(QUrl, result="QVariantMap")
+    def createArchive(self, url):
+        if not url.isLocalFile():
+            return {"ok": False, "message": "Избери локален файл за архива."}
+        try:
+            self._ledger.backup(Path(url.toLocalFile()))
+        except FileExistsError:
+            return {"ok": False, "message": "Вече има файл с това име. Избери друго име."}
+        except (OSError, sqlite3.Error) as error:
+            return {"ok": False, "message": "Архивът не е създаден. " + str(error)}
+        return {"ok": True, "message": "Архивът е създаден."}
+
+    @Slot(QUrl, result="QVariantMap")
+    def restoreArchive(self, url):
+        if not url.isLocalFile():
+            return {"ok": False, "message": "Избери локален архив."}
+        try:
+            safety = self._ledger.restore(Path(url.toLocalFile()))
+        except ValidationError as error:
+            return {"ok": False, "message": str(error)}
+        except (OSError, sqlite3.Error) as error:
+            return {"ok": False, "message": "Възстановяването не е завършено. " + str(error)}
+        self._editing = None
+        refresh_error = self._select(self._day)
+        return {"ok": True,
+                "message": f"Архивът е възстановен. Предишната база е запазена в {safety.name}. {refresh_error}"}
+
+def make_window(database: Path, *, demo: bool = False):
+    if QQuickStyle.name() != "Basic":
+        QQuickStyle.setStyle("Basic")
     engine = QQmlApplicationEngine()
     controller = LedgerWindow(database, engine)
-    engine.setInitialProperties({"controller": controller})
+    engine.setInitialProperties({"controller": controller, "testMode": demo})
     engine.load(QUrl.fromLocalFile(str(Path(__file__).with_name("Main.qml"))))
     return engine, controller

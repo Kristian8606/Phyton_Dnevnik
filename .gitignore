@@ -2,3 +2,10 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+/build/
+/dist/
+/installers/
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*

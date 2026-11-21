@@ -1,22 +1,33 @@
 """Validation, exact arithmetic and SQLite storage for the cash ledger."""
 
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from itertools import zip_longest
+import os
 from pathlib import Path
 import re
 import sqlite3
 from typing import Mapping
 
 SALE = "--||--"
+SALE_MARKERS = (SALE, "1", "-")
 WEIGHTS = ("gold", "newGold", "silver", "newSilver")
 CONTRACT_FIELDS = ("marker", "contract", "interest", "principal", *WEIGHTS)
 CASH_FIELDS = ("income", "cost")
 PLEDGE_FIELDS = ("pledge", "pledgeAmount")
 PURCHASE_FIELDS = ("buyGold", "buySilver")
+BLOCKS = {
+    "contracts": (CONTRACT_FIELDS, (
+        "marker", "contract_no", "interest", "principal", "weight_kind", "weight", "weight_note",
+    )),
+    "cash_movements": (CASH_FIELDS, ("income", "cost", "income_note", "cost_note")),
+    "pledges": (PLEDGE_FIELDS, ("pledge_no", "amount")),
+    "purchases": (PURCHASE_FIELDS, ("gold", "silver", "gold_note", "silver_note")),
+}
 MONETARY = ("interest", "principal", "income", "cost", "pledgeAmount", *PURCHASE_FIELDS)
 WEIGHT_ERROR = "Един етикет допуска само един грамаж. Остави едно попълнено поле."
+WEIGHT_WITHOUT_SALE = "Грамаж се допуска само при продажба. Въведи „1“ в „Пр.“ или изчисти грамажа."
 MONEY_FIELDS = {
     "interest": "Лихва",
     "principal": "Главница",
@@ -30,8 +41,9 @@ MONEY_FIELDS = {
     "silver": "Сребро",
     "newSilver": "Ново сребро",
 }
-DECIMAL = re.compile(r"(-?)([0-9]{1,12})(?:[,.]([0-9]{1,2}))?(?:\s+(.+))?", re.DOTALL)
+DECIMAL = re.compile(r"([0-9]{1,12})(?:[,.]([0-9]{1,2}))?(?:\s+(.+))?", re.DOTALL)
 NUMBER = re.compile(r"[0-9]{1,24}")
+SEARCH_LIMIT = 100
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings (
@@ -92,8 +104,7 @@ PRAGMA user_version = 1;
 
 BALANCE_SQL = """
 SELECT
-    (SELECT opening_cash FROM settings WHERE singleton = 1)
-    + COALESCE((SELECT SUM(interest + principal) FROM contracts WHERE day <= :day), 0)
+    COALESCE((SELECT SUM(interest + principal) FROM contracts WHERE day <= :day), 0)
     + COALESCE((SELECT SUM(COALESCE(income, 0) - COALESCE(cost, 0))
                 FROM cash_movements WHERE day <= :day), 0)
     - COALESCE((SELECT SUM(amount) FROM pledges WHERE day <= :day), 0)
@@ -116,8 +127,30 @@ class Cell:
 @dataclass(frozen=True)
 class DayLedger:
     rows: list[dict[str, Cell]]
-    totals: dict[str, int]
+    operation_ids: list[dict[str, int]]
     summary: dict[str, int]
+
+    @property
+    def carried_cash(self) -> int:
+        return self.summary["cash"] - self.summary["net"]
+
+
+@dataclass(frozen=True)
+class CashDay:
+    day: date
+    carried: int
+    movement: int
+    closing: int
+
+
+@dataclass(frozen=True)
+class NumberMatch:
+    block: str
+    operation_id: int
+    day: date
+    number: str
+    kind: str
+    amount: int
 
 
 @dataclass(frozen=True)
@@ -128,15 +161,20 @@ class SaveResult:
 
 
 def weight_error(fields: Mapping[str, str]) -> str:
-    return WEIGHT_ERROR if sum(bool(fields.get(key, "").strip()) for key in WEIGHTS) > 1 else ""
+    populated = sum(bool(fields.get(key, "").strip()) for key in WEIGHTS)
+    if populated > 1:
+        return WEIGHT_ERROR
+    if populated and fields.get("marker", "").strip() not in SALE_MARKERS:
+        return WEIGHT_WITHOUT_SALE
+    return ""
 
 
-def _decimal(text: str, name: str, *, note: bool = False, signed: bool = False) -> tuple[int, str]:
+def _decimal(text: str, name: str, *, note: bool = False) -> tuple[int, str]:
     match = DECIMAL.fullmatch(text)
-    if not match or (match[1] and not signed) or (match[4] and not note):
+    if not match or (match[3] and not note):
         raise ValidationError(f"Въведи валидна стойност в „{name}“.")
-    units = int(match[2]) * 100 + int((match[3] or "").ljust(2, "0"))
-    return (-units if match[1] else units), (match[4] or "")
+    units = int(match[1]) * 100 + int((match[2] or "").ljust(2, "0"))
+    return units, (match[3] or "")
 
 
 def _amount(fields: Mapping[str, str], key: str, *, note: bool = False) -> tuple[int | None, str]:
@@ -152,7 +190,7 @@ def _contract(day: str, fields: Mapping[str, str]) -> tuple | None:
     interest = _decimal(fields.get("interest", ""), MONEY_FIELDS["interest"])[0]
     principal = _decimal(fields.get("principal", ""), MONEY_FIELDS["principal"])[0]
     marker = fields.get("marker", "")
-    if marker in ("1", "-"):
+    if marker in SALE_MARKERS:
         marker = SALE
     kind = next((key for key in WEIGHTS if fields.get(key)), None)
     weight, note = _amount(fields, kind, note=True) if kind else (None, "")
@@ -203,6 +241,69 @@ def _pair_cells(record: sqlite3.Row, columns: tuple[str, str], keys: tuple[str, 
     }
 
 
+def _cells(block: str, record: sqlite3.Row) -> dict[str, Cell]:
+    if block == "contracts":
+        return _contract_cells(record)
+    if block == "cash_movements":
+        return _pair_cells(record, CASH_FIELDS, CASH_FIELDS)
+    if block == "pledges":
+        return {"pledge": Cell(record["pledge_no"]), "pledgeAmount": Cell(record["amount"])}
+    return _pair_cells(record, ("gold", "silver"), PURCHASE_FIELDS)
+
+
+def _draft_record(block: str, day: str, fields: Mapping[str, str]) -> tuple | None:
+    if block == "contracts":
+        return _contract(day, fields)
+    if block == "pledges":
+        return _pledge(day, fields)
+    return _pair(day, fields, BLOCKS[block][0])
+
+
+def _checked_fields(fields: Mapping[str, str]) -> dict[str, str]:
+    clean = {key: value.strip() for key, value in fields.items()}
+    if problem := weight_error(clean):
+        raise ValidationError(problem)
+    return clean
+
+
+def _check_redemption(db: sqlite3.Connection, record: tuple, exclude: int | None = None) -> None:
+    if not record[1] and db.execute(
+        "SELECT 1 FROM contracts WHERE day = ? AND contract_no = ? AND id IS NOT ?",
+        (record[0], record[2], exclude),
+    ).fetchone():
+        raise ValidationError(f"Номер {record[2]} вече е в таблицата за този ден.")
+
+
+def _schema_signature(db: sqlite3.Connection) -> list[tuple]:
+    return [tuple(row) for row in db.execute(
+        "SELECT type, name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY name"
+    )]
+
+
+def _convert_opening_cash(db: sqlite3.Connection) -> None:
+    """Upgrade a v1 balance in place while keeping old archive schemas readable."""
+    opening = db.execute("SELECT opening_cash FROM settings WHERE singleton = 1").fetchone()[0]
+    if opening == 0:
+        return
+    first_day = db.execute(
+        "SELECT min(first_day) FROM (" +
+        " UNION ALL ".join(f"SELECT min(day) AS first_day FROM {block}" for block in BLOCKS) +
+        ")"
+    ).fetchone()[0]
+    funding_day = (date.fromordinal(max(1, date.fromisoformat(first_day).toordinal() - 1))
+                   if first_day else date.today())
+    note = "Пренесено салдо от старата начална каса"
+    if opening > 0:
+        movement = (funding_day.isoformat(), opening, None, note, "")
+    else:
+        movement = (funding_day.isoformat(), None, -opening, "", note)
+    db.execute(
+        "INSERT INTO cash_movements (day, income, cost, income_note, cost_note) VALUES (?, ?, ?, ?, ?)",
+        movement,
+    )
+    db.execute("UPDATE settings SET opening_cash = 0 WHERE singleton = 1")
+
+
 class Ledger:
     def __init__(self, path: Path):
         self.path = path
@@ -214,6 +315,9 @@ class Ledger:
                 db.executescript("BEGIN IMMEDIATE;\n" + SCHEMA + "\nCOMMIT;")
             elif version != 1:
                 raise sqlite3.DatabaseError("Тази версия на базата данни изисква по-нова програма.")
+            elif db.execute("SELECT opening_cash FROM settings WHERE singleton = 1").fetchone()[0]:
+                db.execute("BEGIN IMMEDIATE")
+                _convert_opening_cash(db)
 
     @contextmanager
     def _connection(self):
@@ -225,80 +329,155 @@ class Ledger:
         finally:
             db.close()
 
-    def opening_cash(self) -> int:
-        with self._connection() as db:
-            return db.execute("SELECT opening_cash FROM settings WHERE singleton = 1").fetchone()[0]
-
-    def set_opening_cash(self, text: str) -> None:
-        amount, _ = _decimal(text.strip(), "Начална каса", signed=True)
-        with self._connection() as db:
-            db.execute("UPDATE settings SET opening_cash = ? WHERE singleton = 1", (amount,))
-
     def save(self, day: date, fields: Mapping[str, str]) -> SaveResult:
-        fields = {key: value.strip() for key, value in fields.items()}
-        error = weight_error(fields)
-        if error:
-            raise ValidationError(error)
-
+        fields = _checked_fields(fields)
         iso = day.isoformat()
-        contract = _contract(iso, fields)
-        cash = _pair(iso, fields, CASH_FIELDS)
-        pledge = _pledge(iso, fields)
-        purchase = _pair(iso, fields, PURCHASE_FIELDS)
-        records = (
-            (contract, CONTRACT_FIELDS, "INSERT INTO contracts (day, marker, contract_no, interest, principal,"
-             " weight_kind, weight, weight_note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"),
-            (cash, CASH_FIELDS, "INSERT INTO cash_movements (day, income, cost, income_note, cost_note)"
-             " VALUES (?, ?, ?, ?, ?)"),
-            (pledge, PLEDGE_FIELDS, "INSERT INTO pledges (day, pledge_no, amount) VALUES (?, ?, ?)"),
-            (purchase, PURCHASE_FIELDS, "INSERT INTO purchases (day, gold, silver, gold_note, silver_note)"
-             " VALUES (?, ?, ?, ?, ?)"),
-        )
-        if not any(record for record, _, _ in records):
+        records = {block: record for block in BLOCKS if (record := _draft_record(block, iso, fields))}
+        if not records:
             if fields.get("pledge"):
                 raise ValidationError("Въведи сумата на залога.")
             raise ValidationError("Въведи поне една операция.")
 
         with self._connection() as db:
             db.execute("BEGIN IMMEDIATE")
-            if contract and not contract[1] and db.execute(
-                "SELECT 1 FROM contracts WHERE day = ? AND contract_no = ?", (iso, contract[2])
-            ).fetchone():
-                raise ValidationError(f"Номер {contract[2]} вече е в таблицата за този ден.")
-            for record, _, statement in records:
-                if record is not None:
-                    db.execute(statement, record)
+            if contract := records.get("contracts"):
+                _check_redemption(db, contract)
+            for block, record in records.items():
+                columns = ", ".join(BLOCKS[block][1])
+                placeholders = ", ".join("?" for _ in record)
+                db.execute(f"INSERT INTO {block} (day, {columns}) VALUES ({placeholders})", record)
 
-        cleared = tuple(key for record, keys, _ in records if record is not None for key in keys)
+        cleared = tuple(key for block in records for key in BLOCKS[block][0])
         next_pledge = None
-        if pledge:
+        if pledge := records.get("pledges"):
             next_pledge = str(int(pledge[1]) + 1) if NUMBER.fullmatch(pledge[1]) else ""
-        return SaveResult(cleared, next_pledge, sum(record is not None for record, _, _ in records))
+        return SaveResult(cleared, next_pledge, len(records))
+
+    def _operation(self, db: sqlite3.Connection, day: date, block: str, operation_id: int) -> dict[str, Cell]:
+        if block not in BLOCKS:
+            raise ValidationError("Избери операция от таблицата.")
+        row = db.execute(f"SELECT * FROM {block} WHERE day = ? AND id = ?",
+                         (day.isoformat(), operation_id)).fetchone()
+        if row is None:
+            raise ValidationError("Операцията вече не е налична. Отвори датата отново.")
+        return _cells(block, row)
+
+    def read_operation(self, day: date, block: str, operation_id: int) -> dict[str, Cell]:
+        with self._connection() as db:
+            return self._operation(db, day, block, operation_id)
+
+    def edit(self, day: date, block: str, operation_id: int,
+             fields: Mapping[str, str], original: Mapping[str, Cell]) -> None:
+        if block not in BLOCKS:
+            raise ValidationError("Избери операция от таблицата.")
+        values = _checked_fields({key: fields.get(key, "") for key in BLOCKS[block][0]})
+        record = _draft_record(block, day.isoformat(), values)
+        if record is None:
+            raise ValidationError("Попълни данните на операцията.")
+        with self._connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if self._operation(db, day, block, operation_id) != original:
+                raise ValidationError("Операцията е променена. Отвори я отново, за да видиш актуалните данни.")
+            if block == "contracts":
+                _check_redemption(db, record, operation_id)
+            columns = ", ".join(f"{name} = ?" for name in BLOCKS[block][1])
+            db.execute(f"UPDATE {block} SET {columns} WHERE id = ? AND day = ?",
+                       (*record[1:], operation_id, record[0]))
+
+    def backup(self, target: Path) -> None:
+        descriptor = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(descriptor)
+        try:
+            with self._connection() as source, closing(sqlite3.connect(target)) as archive:
+                source.backup(archive)
+                archive.execute("PRAGMA journal_mode = DELETE")
+        except BaseException:
+            target.unlink(missing_ok=True)
+            raise
+
+    def restore(self, archive: Path) -> Path:
+        if archive.samefile(self.path):
+            raise ValidationError("Избери архивен файл на касовия дневник.")
+        with closing(sqlite3.connect(archive.resolve().as_uri() + "?mode=ro", uri=True)) as source:
+            source.execute("PRAGMA trusted_schema = OFF")
+            source.execute("BEGIN")
+            with self._connection() as destination:
+                compatible = (source.execute("PRAGMA user_version").fetchone() ==
+                              tuple(destination.execute("PRAGMA user_version").fetchone())
+                              and _schema_signature(source) == _schema_signature(destination))
+                if not compatible or source.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
+                    raise ValidationError("Файлът не е валиден архив на тази версия на касовия дневник.")
+                if source.execute("SELECT opening_cash FROM settings WHERE singleton = 1").fetchone() is None:
+                    raise ValidationError("В архива липсват настройките на дневника.")
+                stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+                safety = self.path.with_name(f"{self.path.stem}-before-restore-{stamp}.sqlite3")
+                destination.execute("BEGIN IMMEDIATE")
+                self.backup(safety)
+                for table in ("settings", *BLOCKS):
+                    records = source.execute(f"SELECT * FROM {table}")
+                    placeholders = ", ".join("?" for _ in records.description)
+                    destination.execute(f"DELETE FROM {table}")
+                    destination.executemany(f"INSERT INTO {table} VALUES ({placeholders})", records)
+                _convert_opening_cash(destination)
+        return safety
+
+    def cash_by_day(self, last_day: date) -> list[CashDay]:
+        end = last_day.toordinal()
+        start = max(1, end - 6)
+        prior = date.fromordinal(start - 1).isoformat() if start > 1 else ""
+        history = []
+        with self._connection() as db:
+            db.execute("BEGIN")
+            carried = db.execute(BALANCE_SQL, {"day": prior}).fetchone()[0]
+            for ordinal in range(start, end + 1):
+                day = date.fromordinal(ordinal)
+                closing = db.execute(BALANCE_SQL, {"day": day.isoformat()}).fetchone()[0]
+                history.append(CashDay(day, carried, closing - carried, closing))
+                carried = closing
+        return history
+
+    def find_number(self, query: str) -> list[NumberMatch]:
+        needle = query.strip().casefold()
+        if not needle:
+            return []
+        with self._connection() as db:
+            db.create_function("casefold", 1, str.casefold, deterministic=True)
+            matches = db.execute("""
+                SELECT * FROM (
+                    SELECT 'contracts' AS block, id, day, contract_no AS number,
+                           CASE WHEN marker = :sale THEN 'sale' ELSE 'contract' END AS kind,
+                           interest + principal AS amount
+                    FROM contracts WHERE instr(contract_no, :needle) > 0
+                    UNION ALL
+                    SELECT 'pledges', id, day, pledge_no, 'pledge', amount
+                    FROM pledges WHERE instr(casefold(pledge_no), :needle) > 0
+                )
+                ORDER BY (casefold(number) = :needle) DESC, day DESC, block, id DESC
+                LIMIT :limit
+            """, {"needle": needle, "sale": SALE, "limit": SEARCH_LIMIT + 1})
+            return [NumberMatch(row["block"], row["id"], date.fromisoformat(row["day"]),
+                                row["number"], row["kind"], row["amount"]) for row in matches]
 
     def day(self, day: date) -> DayLedger:
         iso = day.isoformat()
         with self._connection() as db:
             db.execute("BEGIN")
-            contracts = [_contract_cells(row) for row in db.execute(
-                "SELECT * FROM contracts WHERE day = ? ORDER BY id", (iso,)
-            )]
-            cash = [_pair_cells(row, CASH_FIELDS, CASH_FIELDS) for row in db.execute(
-                "SELECT * FROM cash_movements WHERE day = ? ORDER BY id", (iso,)
-            )]
-            pledges = [{"pledge": Cell(row["pledge_no"]), "pledgeAmount": Cell(row["amount"])}
-                       for row in db.execute("SELECT * FROM pledges WHERE day = ? ORDER BY id", (iso,))]
-            purchases = [_pair_cells(row, ("gold", "silver"), PURCHASE_FIELDS) for row in db.execute(
-                "SELECT * FROM purchases WHERE day = ? ORDER BY id", (iso,)
-            )]
+            records = {block: [(row["id"], _cells(block, row)) for row in db.execute(
+                f"SELECT * FROM {block} WHERE day = ? ORDER BY id", (iso,)
+            )] for block in BLOCKS}
             balance = db.execute(BALANCE_SQL, {"day": iso}).fetchone()[0]
 
-        rows = [{key: cell for block in blocks if block for key, cell in block.items()}
-                for blocks in zip_longest(contracts, cash, pledges, purchases)]
+        rows = []
+        operation_ids = []
+        for entries in zip_longest(*records.values()):
+            blocks = {block: entry for block, entry in zip(records, entries) if entry is not None}
+            operation_ids.append({block: entry[0] for block, entry in blocks.items()})
+            rows.append({key: cell for _, cells in blocks.values() for key, cell in cells.items()})
         totals = {key: sum(row[key].value for row in rows if key in row) for key in MONETARY}
-        unmarked = [row for row in contracts if not row["marker"].value]
+        unmarked = [row for _, row in records["contracts"] if not row["marker"].value]
         incoming = totals["interest"] + totals["principal"] + totals["income"]
         outgoing = totals["cost"] + totals["pledgeAmount"] + totals["buyGold"] + totals["buySilver"]
-        return DayLedger(rows, totals, {
+        return DayLedger(rows, operation_ids, {
             "cash": balance,
             "profit": totals["interest"],
             "interest": sum(row["interest"].value for row in unmarked),
