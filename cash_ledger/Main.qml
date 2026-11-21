@@ -188,6 +188,15 @@ ApplicationWindow {
         }
     }
 
+    component ThemeMenuItem: MenuItem {
+        required property string mode
+        objectName: "theme_" + mode
+        checkable: true
+        checked: win.preferences.theme === mode
+        ButtonGroup.group: themeGroup
+        onTriggered: win.showStatus(win.preferences.setTheme(mode))
+    }
+
     component ColumnCell: Rectangle {
         id: cell
         property bool divided: false
@@ -243,9 +252,35 @@ ApplicationWindow {
                 }
             }
             LedgerButton {
+                id: settingsButton
                 objectName: "settingsButton"
-                text: "Настройки"
-                onClicked: settingsDialog.open()
+                text: "Настройки ▾"
+                Accessible.name: "Настройки"
+                highlighted: settingsMenu.opened
+                onClicked: settingsMenu.open()
+
+                Menu {
+                    id: settingsMenu
+                    objectName: "settingsMenu"
+                    width: 192
+                    x: settingsButton.width - width
+                    y: settingsButton.height + 4
+
+                    Menu {
+                        objectName: "themeMenu"
+                        title: "Тема"
+                        width: 172
+                        ButtonGroup { id: themeGroup }
+                        ThemeMenuItem { mode: "system"; text: "Като системата" }
+                        ThemeMenuItem { mode: "light"; text: "Светла" }
+                        ThemeMenuItem { mode: "dark"; text: "Тъмна" }
+                    }
+                    MenuItem {
+                        objectName: "updatesMenuItem"
+                        text: win.updates.supported ? "Обновяване…" : "За „Дневник“…"
+                        onTriggered: updatesDialog.open()
+                    }
+                }
             }
             LedgerButton {
                 id: archiveButton
@@ -783,42 +818,15 @@ ApplicationWindow {
     }
 
     Dialog {
-        id: settingsDialog
+        id: updatesDialog
+        objectName: "updatesDialog"
         anchors.centerIn: Overlay.overlay
         modal: true
-        title: "Настройки"
-        width: 430
+        title: win.updates.supported ? "Обновяване" : "За „Дневник“"
+        width: 390
 
         contentItem: ColumnLayout {
             spacing: 12
-            LedgerText { text: "Външен вид"; font.weight: Font.DemiBold }
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 6
-                Repeater {
-                    model: [
-                        {mode: "system", label: "Като системата"},
-                        {mode: "light", label: "Светъл"},
-                        {mode: "dark", label: "Тъмен"}
-                    ]
-                    delegate: LedgerButton {
-                        required property var modelData
-                        objectName: "theme_" + modelData.mode
-                        Layout.fillWidth: true
-                        text: modelData.label
-                        primary: win.preferences.theme === modelData.mode
-                        onClicked: settingsError.text = win.preferences.setTheme(modelData.mode)
-                    }
-                }
-            }
-            LedgerText {
-                id: settingsError
-                visible: text.length > 0
-                color: win.warningColor
-                Layout.fillWidth: true
-                wrapMode: Text.WordWrap
-            }
-            Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: win.line }
             LedgerText { text: "Версия " + win.preferences.version; color: win.muted }
             ColumnLayout {
                 Layout.fillWidth: true
@@ -845,7 +853,7 @@ ApplicationWindow {
             LedgerButton {
                 Layout.alignment: Qt.AlignRight
                 text: "Затвори"
-                onClicked: settingsDialog.close()
+                onClicked: updatesDialog.close()
             }
         }
     }

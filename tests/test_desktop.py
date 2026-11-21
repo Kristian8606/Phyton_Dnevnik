@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from PySide6.QtCore import QPointF, Qt, qInstallMessageHandler
+from PySide6.QtCore import QObject, QPointF, Qt, qInstallMessageHandler
 from PySide6.QtQuick import QQuickItem, QQuickWindow
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtTest import QTest
@@ -41,11 +41,26 @@ class DesktopTests(unittest.TestCase):
                                      point.toPoint())
                     app.processEvents()
 
-                click("settingsButton")
+                def open_theme_menu():
+                    click("settingsButton")
+                    settings = window.findChild(QObject, "settingsMenu")
+                    self.assertIsNotNone(settings)
+                    self.assertTrue(settings.property("opened"))
+                    QTest.keyClick(window, Qt.Key.Key_Down)
+                    QTest.keyClick(window, Qt.Key.Key_Right)
+                    QTest.qWait(60)
+                    theme = window.findChild(QObject, "themeMenu")
+                    self.assertIsNotNone(theme)
+                    self.assertTrue(theme.property("opened"))
+
+                open_theme_menu()
                 click("theme_dark")
                 self.assertTrue(window.property("dark"))
+                open_theme_menu()
+                self.assertTrue(visual_item(window.contentItem(), "theme_dark").property("checked"))
                 click("theme_light")
                 self.assertFalse(window.property("dark"))
+                open_theme_menu()
                 click("theme_dark")
             finally:
                 engine.rootObjects()[0].close()
