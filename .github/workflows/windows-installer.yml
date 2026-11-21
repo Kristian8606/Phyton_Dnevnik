@@ -55,14 +55,14 @@ jobs:
             $install = Start-Process -FilePath $installer.FullName -Wait -PassThru -ArgumentList $installArgs
             if ($install.ExitCode -ne 0) { throw "Installer returned $($install.ExitCode)." }
             $app = Start-Process -FilePath (Join-Path $targetDir 'Dnevnik.exe') -Wait -PassThru -ArgumentList '--check-startup'
-            if ($app.ExitCode -ne 0 -or !(Test-Path -LiteralPath $sqliteFile)) {
+            if ($app.ExitCode -ne 0) {
               throw "Packaged application failed its startup check. Exit code $($app.ExitCode)."
             }
           }
           python -c "from cash_ledger.data_location import LEGACY_DIRECTORY_NAME; from cash_ledger.ledger import Ledger; from datetime import date; from pathlib import Path; import sys; Ledger(Path(sys.argv[1]) / LEGACY_DIRECTORY_NAME / 'cash-ledger.sqlite3').save(date.today(), {'income': '137'})" $env:LOCALAPPDATA
           if ($LASTEXITCODE -ne 0) { throw 'Could not seed the legacy test database.' }
           InstallAndCheck
-          python -c "from cash_ledger.ledger import Ledger; from datetime import date; from pathlib import Path; import sys; ledger = Ledger(Path(sys.argv[1])); assert ledger.day(date.today()).summary['cash'] == 13700; ledger.save(date.today(), {'income': '23'})" $sqliteFile
+          python -c "from cash_ledger.data_location import default_database; from cash_ledger.ledger import Ledger; from datetime import date; from pathlib import Path; import sys; path = Path(sys.argv[1]); assert default_database(path.parent) == path and path.is_file(); ledger = Ledger(path); assert ledger.day(date.today()).summary['cash'] == 13700; ledger.save(date.today(), {'income': '23'})" $sqliteFile
           if ($LASTEXITCODE -ne 0) { throw 'Could not migrate the test database.' }
           $appPath = Join-Path $targetDir 'Dnevnik.exe'
           $previous = Start-Process -FilePath $appPath -PassThru

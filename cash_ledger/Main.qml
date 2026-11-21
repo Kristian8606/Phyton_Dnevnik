@@ -10,6 +10,9 @@ ApplicationWindow {
     required property QtObject updates
     visible: true
     property bool testMode: false
+    property bool sessionEnabled: false
+    signal signOutRequested()
+    signal registrationRequested()
     title: testMode ? "Дневник · Тестови дни" : "Дневник"
     width: Math.max(800, Math.min(1400, Screen.desktopAvailableWidth - 28))
     height: Math.max(540, Math.min(760, Screen.desktopAvailableHeight - 60))
@@ -17,8 +20,9 @@ ApplicationWindow {
     minimumHeight: 520
     color: work
 
-    readonly property bool dark: preferences.theme === "dark"
-                                || (preferences.theme === "system"
+    readonly property string currentTheme: preferences ? preferences.theme : "system"
+    readonly property bool dark: currentTheme === "dark"
+                                || (currentTheme === "system"
                                     && Application.styleHints.colorScheme === Qt.ColorScheme.Dark)
 
     palette.window: win.paper
@@ -192,7 +196,7 @@ ApplicationWindow {
         required property string mode
         objectName: "theme_" + mode
         checkable: true
-        checked: win.preferences.theme === mode
+        checked: win.currentTheme === mode
         ButtonGroup.group: themeGroup
         onTriggered: win.showStatus(win.preferences.setTheme(mode))
     }
@@ -294,6 +298,21 @@ ApplicationWindow {
                         objectName: "updatesMenuItem"
                         text: win.updates.supported ? "Обновяване…" : "За „Дневник“…"
                         onTriggered: updatesDialog.open()
+                    }
+                    MenuItem {
+                        visible: win.sessionEnabled
+                        text: "Нов потребител…"
+                        onTriggered: win.registrationRequested()
+                    }
+                    MenuItem {
+                        visible: win.sessionEnabled
+                        text: "Изход от профила"
+                        onTriggered: {
+                            if (Object.values(win.draft()).some(value => value.trim()))
+                                signOutDialog.open()
+                            else
+                                win.signOutRequested()
+                        }
                     }
                 }
             }
@@ -822,6 +841,34 @@ ApplicationWindow {
     }
 
     Dialog {
+        id: signOutDialog
+        anchors.centerIn: Overlay.overlay
+        modal: true
+        title: "Изход от профила"
+        width: 390
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            LedgerText {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "Имаш незаписани полета. Запази ги преди изход или потвърди изхода."
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                LedgerButton { text: "Назад"; onClicked: signOutDialog.close() }
+                LedgerButton {
+                    text: "Изход"
+                    onClicked: {
+                        signOutDialog.close()
+                        win.signOutRequested()
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
         id: updatesDialog
         objectName: "updatesDialog"
         anchors.centerIn: Overlay.overlay
@@ -831,7 +878,7 @@ ApplicationWindow {
 
         contentItem: ColumnLayout {
             spacing: 12
-            LedgerText { text: "Версия " + win.preferences.version; color: win.muted }
+            LedgerText { text: win.preferences ? "Версия " + win.preferences.version : ""; color: win.muted }
             ColumnLayout {
                 Layout.fillWidth: true
                 visible: win.updates.supported

@@ -3,17 +3,32 @@
 from argparse import ArgumentParser, SUPPRESS
 from datetime import date
 from pathlib import Path
+from secrets import token_urlsafe
 import sqlite3
 import sys
+from tempfile import TemporaryDirectory
 
 from PySide6.QtCore import QLockFile, QStandardPaths
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtNetwork import QSslSocket
 
-from .data_location import default_database
-from .desktop import make_window
-from .demo import prepare_demo
 from . import __version__
+from .accounts import REGISTRATION_CODE
+from .data_location import default_database
+from .demo import prepare_demo
+from .session import DesktopSession
+
+
+def check_startup(app: QGuiApplication) -> int:
+    if sys.platform == "win32" and not QSslSocket.supportsSsl():
+        return 1
+    with TemporaryDirectory() as temporary:
+        directory = Path(temporary)
+        session = DesktopSession(directory, lambda: directory / "test.sqlite3", show_windows=False)
+        if not session.start() or session.submit("startup-test", token_urlsafe(16), REGISTRATION_CODE):
+            return 1
+        app.processEvents()
+    return 0
 
 
 def main() -> int:
@@ -28,28 +43,30 @@ def main() -> int:
     app.setApplicationName("Dnevnik")
     app.setApplicationDisplayName("Дневник")
     app.setApplicationVersion(__version__)
-    data_directory = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))
-    try:
-        database = args.database or default_database(data_directory, demo=args.demo)
-    except (OSError, sqlite3.Error) as exc:
-        parser.exit(1, f"Записите не можаха да се прехвърлят. {exc}\n")
-    if args.demo:
-        data_directory.mkdir(parents=True, exist_ok=True)
-        lock = QLockFile(str(database.with_suffix(".seed.lock")))
-        if not lock.tryLock(5000):
-            parser.exit(1, "Подготовката на тестовите дни вече е стартирана.\n")
-        try:
-            prepare_demo(database, date.today())
-        finally:
-            lock.unlock()
-    engine, controller = make_window(database, demo=args.demo)
-    if not engine.rootObjects():
-        return 1
     if args.check_startup:
-        app.processEvents()
-        if sys.platform == "win32" and not QSslSocket.supportsSsl():
-            return 1
-        return 0
+        return check_startup(app)
+
+    data_directory = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))
+
+    def open_database():
+        database = args.database or default_database(data_directory, demo=args.demo)
+        if args.demo:
+            data_directory.mkdir(parents=True, exist_ok=True)
+            lock = QLockFile(str(database.with_suffix(".seed.lock")))
+            if not lock.tryLock(5000):
+                raise OSError("Подготовката на тестовите дни вече е стартирала.")
+            try:
+                prepare_demo(database, date.today())
+            finally:
+                lock.unlock()
+        return database
+
+    try:
+        session = DesktopSession(data_directory, open_database, demo=args.demo)
+    except (OSError, sqlite3.Error) as exc:
+        parser.exit(1, f"Потребителските профили са недостъпни. {exc}\n")
+    if not session.start():
+        return 1
     return app.exec()
 
 

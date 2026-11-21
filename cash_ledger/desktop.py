@@ -329,18 +329,21 @@ class LedgerWindow(QObject):
         return {"ok": True,
                 "message": f"Архивът е възстановен. Предишната база е запазена в {safety.name}. {refresh_error}"}
 
-def make_window(database: Path, *, demo: bool = False):
+def make_window(database: Path, *, demo: bool = False, preferences: Preferences | None = None,
+                session_enabled: bool = False, visible: bool = True):
     if QQuickStyle.name() != "Basic":
         QQuickStyle.setStyle("Basic")
     engine = QQmlApplicationEngine()
     controller = LedgerWindow(database, engine)
-    preferences = Preferences(database.parent / "settings.ini", engine)
+    preferences = preferences or Preferences(database.parent / "settings.ini", engine)
     updates = WindowsUpdates(database.parent / "updates", engine)
     engine.setInitialProperties({
         "controller": controller,
         "preferences": preferences,
         "updates": updates,
         "testMode": demo,
+        "sessionEnabled": session_enabled,
+        "visible": visible,
     })
     engine.load(QUrl.fromLocalFile(str(Path(__file__).with_name("Main.qml"))))
     return engine, controller
