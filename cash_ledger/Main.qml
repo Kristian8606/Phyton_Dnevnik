@@ -275,22 +275,26 @@ ApplicationWindow {
                         ThemeMenuItem { mode: "light"; text: "Светла" }
                         ThemeMenuItem { mode: "dark"; text: "Тъмна" }
                     }
+                    Menu {
+                        objectName: "archiveMenu"
+                        title: "Архив"
+                        width: 210
+                        MenuItem {
+                            objectName: "createArchiveMenuItem"
+                            text: "Създай архив…"
+                            onTriggered: backupPicker.open()
+                        }
+                        MenuItem {
+                            objectName: "restoreArchiveMenuItem"
+                            text: "Възстанови от архив…"
+                            onTriggered: restorePicker.open()
+                        }
+                    }
                     MenuItem {
                         objectName: "updatesMenuItem"
                         text: win.updates.supported ? "Обновяване…" : "За „Дневник“…"
                         onTriggered: updatesDialog.open()
                     }
-                }
-            }
-            LedgerButton {
-                id: archiveButton
-                text: "Архив"
-                onClicked: archiveMenu.open()
-                Menu {
-                    id: archiveMenu
-                    y: archiveButton.height
-                    MenuItem { text: "Създай архив…"; onTriggered: backupPicker.open() }
-                    MenuItem { text: "Възстанови от архив…"; onTriggered: restorePicker.open() }
                 }
             }
         }

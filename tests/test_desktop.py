@@ -24,7 +24,7 @@ def visual_item(root: QQuickItem, name: str) -> QQuickItem | None:
 
 
 class DesktopTests(unittest.TestCase):
-    def test_theme_can_be_changed_in_settings_and_is_saved(self):
+    def test_settings_theme_persists_and_archive_actions_are_available(self):
         app = QGuiApplication.instance() or QGuiApplication([])
         with TemporaryDirectory() as temporary:
             database = Path(temporary) / "ledger.sqlite3"
@@ -62,6 +62,17 @@ class DesktopTests(unittest.TestCase):
                 self.assertFalse(window.property("dark"))
                 open_theme_menu()
                 click("theme_dark")
+
+                click("settingsButton")
+                QTest.keyClick(window, Qt.Key.Key_Down)
+                QTest.keyClick(window, Qt.Key.Key_Down)
+                QTest.keyClick(window, Qt.Key.Key_Right)
+                QTest.qWait(60)
+                archive = window.findChild(QObject, "archiveMenu")
+                self.assertIsNotNone(archive)
+                self.assertTrue(archive.property("opened"))
+                for name in ("createArchiveMenuItem", "restoreArchiveMenuItem"):
+                    self.assertIsNotNone(visual_item(window.contentItem(), name))
             finally:
                 engine.rootObjects()[0].close()
 
