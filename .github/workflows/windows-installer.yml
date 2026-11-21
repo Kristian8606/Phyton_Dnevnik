@@ -72,3 +72,37 @@ jobs:
           name: Dnevnik-windows-x64
           path: installers/Dnevnik-*-windows-x64.exe
           if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: installer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: windows-release-${{ github.ref }}
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: Dnevnik-windows-x64
+          path: installers
+      - name: Publish verified installer to private Releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          filename="Dnevnik-${TAG#v}-windows-x64.exe"
+          installer="installers/$filename"
+          test -s "$installer"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,assets > release.json; then
+            if jq -e '.isDraft' release.json > /dev/null; then
+              gh release upload "$TAG" "$installer" --repo "$GITHUB_REPOSITORY" --clobber
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+            else
+              jq -e --arg name "$filename" 'any(.assets[]; .name == $name)' release.json > /dev/null
+            fi
+          else
+            gh release create "$TAG" "$installer" --repo "$GITHUB_REPOSITORY" \
+              --verify-tag --title "Дневник ${TAG#v}" --notes "Windows x64 installer"
+          fi

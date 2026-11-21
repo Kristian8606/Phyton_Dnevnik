@@ -24,6 +24,38 @@ def visual_item(root: QQuickItem, name: str) -> QQuickItem | None:
 
 
 class DesktopTests(unittest.TestCase):
+    def test_theme_can_be_changed_in_settings_and_is_saved(self):
+        app = QGuiApplication.instance() or QGuiApplication([])
+        with TemporaryDirectory() as temporary:
+            database = Path(temporary) / "ledger.sqlite3"
+            engine, controller = make_window(database)
+            try:
+                window: QQuickWindow = engine.rootObjects()[0]
+                app.processEvents()
+
+                def click(name):
+                    control = visual_item(window.contentItem(), name)
+                    self.assertIsNotNone(control, name)
+                    point = control.mapToScene(QPointF(control.width() / 2, control.height() / 2))
+                    QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                                     point.toPoint())
+                    app.processEvents()
+
+                click("settingsButton")
+                click("theme_dark")
+                self.assertTrue(window.property("dark"))
+                click("theme_light")
+                self.assertFalse(window.property("dark"))
+                click("theme_dark")
+            finally:
+                engine.rootObjects()[0].close()
+
+            reopened, controller = make_window(database)
+            try:
+                self.assertTrue(reopened.rootObjects()[0].property("dark"))
+            finally:
+                reopened.rootObjects()[0].close()
+
     def test_save_shares_the_receipts_bar_and_writes_the_entry(self):
         app = QGuiApplication.instance() or QGuiApplication([])
         with TemporaryDirectory() as temporary:

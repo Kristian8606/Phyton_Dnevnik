@@ -11,6 +11,9 @@ from PySide6.QtQuickControls2 import QQuickStyle
 
 from .ledger import BLOCKS, Ledger, MONETARY, SEARCH_LIMIT, ValidationError, WEIGHTS, weight_error
 
+from .preferences import Preferences
+from .updates import WindowsUpdates
+
 COLUMNS = (
     ("marker", "Пр.", "Маркер за продажба", "", 55),
     ("contract", "Д-р. Н.", "Номер на договор или етикет", "", 86),
@@ -331,6 +334,13 @@ def make_window(database: Path, *, demo: bool = False):
         QQuickStyle.setStyle("Basic")
     engine = QQmlApplicationEngine()
     controller = LedgerWindow(database, engine)
-    engine.setInitialProperties({"controller": controller, "testMode": demo})
+    preferences = Preferences(database.parent / "settings.ini", engine)
+    updates = WindowsUpdates(database.parent / "updates", engine)
+    engine.setInitialProperties({
+        "controller": controller,
+        "preferences": preferences,
+        "updates": updates,
+        "testMode": demo,
+    })
     engine.load(QUrl.fromLocalFile(str(Path(__file__).with_name("Main.qml"))))
     return engine, controller

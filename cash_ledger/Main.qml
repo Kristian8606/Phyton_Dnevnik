@@ -6,6 +6,8 @@ import QtQuick.Layouts
 ApplicationWindow {
     id: win
     required property QtObject controller
+    required property QtObject preferences
+    required property QtObject updates
     visible: true
     property bool testMode: false
     title: testMode ? "Дневник · Тестови дни" : "Дневник"
@@ -15,7 +17,18 @@ ApplicationWindow {
     minimumHeight: 520
     color: work
 
-    readonly property bool dark: Application.styleHints.colorScheme === Qt.ColorScheme.Dark
+    readonly property bool dark: preferences.theme === "dark"
+                                || (preferences.theme === "system"
+                                    && Application.styleHints.colorScheme === Qt.ColorScheme.Dark)
+
+    palette.window: win.paper
+    palette.windowText: win.ink
+    palette.base: win.paper
+    palette.text: win.ink
+    palette.button: win.paper
+    palette.buttonText: win.ink
+    palette.highlight: win.accent
+    palette.highlightedText: win.accentText
     readonly property color ink: dark ? "#e6eeed" : "#192426"
     readonly property color muted: dark ? "#a7b9b8" : "#516265"
     readonly property color work: dark ? "#141e20" : "#f5f8f8"
@@ -228,6 +241,11 @@ ApplicationWindow {
                         win.showResult(report)
                     }
                 }
+            }
+            LedgerButton {
+                objectName: "settingsButton"
+                text: "Настройки"
+                onClicked: settingsDialog.open()
             }
             LedgerButton {
                 id: archiveButton
@@ -758,6 +776,104 @@ ApplicationWindow {
                         text: win.controller.isToday ? "Запиши" : "Запиши за днес"
                         primary: true
                         onClicked: win.submit(-1)
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: settingsDialog
+        anchors.centerIn: Overlay.overlay
+        modal: true
+        title: "Настройки"
+        width: 430
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            LedgerText { text: "Външен вид"; font.weight: Font.DemiBold }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 6
+                Repeater {
+                    model: [
+                        {mode: "system", label: "Като системата"},
+                        {mode: "light", label: "Светъл"},
+                        {mode: "dark", label: "Тъмен"}
+                    ]
+                    delegate: LedgerButton {
+                        required property var modelData
+                        objectName: "theme_" + modelData.mode
+                        Layout.fillWidth: true
+                        text: modelData.label
+                        primary: win.preferences.theme === modelData.mode
+                        onClicked: settingsError.text = win.preferences.setTheme(modelData.mode)
+                    }
+                }
+            }
+            LedgerText {
+                id: settingsError
+                visible: text.length > 0
+                color: win.warningColor
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+            }
+            Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: win.line }
+            LedgerText { text: "Версия " + win.preferences.version; color: win.muted }
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: win.updates.supported
+                spacing: 7
+                LedgerButton {
+                    text: win.updates.ready ? "Инсталирай обновяването" : "Провери за обновяване"
+                    enabled: !win.updates.busy
+                    primary: win.updates.ready
+                    onClicked: {
+                        if (win.updates.ready)
+                            installUpdateDialog.open()
+                        else
+                            win.updates.check()
+                    }
+                }
+                LedgerText {
+                    Layout.fillWidth: true
+                    visible: text.length > 0
+                    wrapMode: Text.WordWrap
+                    text: win.updates.message
+                }
+            }
+            LedgerButton {
+                Layout.alignment: Qt.AlignRight
+                text: "Затвори"
+                onClicked: settingsDialog.close()
+            }
+        }
+    }
+
+    Dialog {
+        id: installUpdateDialog
+        anchors.centerIn: Overlay.overlay
+        modal: true
+        title: "Инсталиране на обновяване"
+        width: 390
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            LedgerText {
+                text: "Запази въведените операции, преди да продължиш. Дневник ще се затвори."
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                LedgerButton { text: "Отказ"; onClicked: installUpdateDialog.close() }
+                LedgerButton {
+                    text: "Инсталирай"
+                    primary: true
+                    onClicked: {
+                        installUpdateDialog.close()
+                        if (win.updates.install())
+                            Qt.quit()
                     }
                 }
             }
