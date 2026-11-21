@@ -8,6 +8,7 @@ import sys
 
 from PySide6.QtCore import QLockFile, QStandardPaths
 from PySide6.QtGui import QGuiApplication
+from PySide6.QtNetwork import QSslSocket
 
 from .data_location import default_database
 from .desktop import make_window
@@ -46,6 +47,8 @@ def main() -> int:
         return 1
     if args.check_startup:
         app.processEvents()
+        if sys.platform == "win32" and not QSslSocket.supportsSsl():
+            return 1
         return 0
     return app.exec()
 

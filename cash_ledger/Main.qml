@@ -843,12 +843,6 @@ ApplicationWindow {
                             win.updates.check()
                     }
                 }
-                LedgerButton {
-                    visible: win.updates.needsLogin
-                    enabled: !win.updates.busy
-                    text: "Вход в GitHub"
-                    onClicked: win.updates.signIn()
-                }
                 LedgerText {
                     Layout.fillWidth: true
                     visible: text.length > 0

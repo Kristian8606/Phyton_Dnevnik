@@ -2,21 +2,23 @@
 
 import ctypes
 from dataclasses import dataclass
-from hashlib import file_digest
+from hashlib import file_digest, sha256
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
-from tempfile import TemporaryDirectory
 
-from PySide6.QtCore import QObject, Property, QProcess, QProcessEnvironment, QTimer, Signal, Slot
+from PySide6.QtCore import QIODevice, QObject, Property, QSaveFile, QUrl, Signal, Slot
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
 from . import __version__
 
 
 REPOSITORY = "Kristian8606/Phyton_Dnevnik"
+RELEASE_METADATA_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
+RELEASE_DOWNLOAD_URL = f"https://github.com/{REPOSITORY}/releases/download"
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,10 @@ class Update:
     filename: str
     checksum: str
 
+    @property
+    def url(self) -> str:
+        return f"{RELEASE_DOWNLOAD_URL}/{self.tag}/{self.filename}"
+
     def matches(self, file: Path) -> bool:
         with file.open("rb") as source:
             return file_digest(source, "sha256").hexdigest() == self.checksum
@@ -32,7 +38,7 @@ class Update:
 
 def select_update(release: dict, installed: str) -> Update | None:
     tag = release["tag_name"]
-    if release.get("draft") or release.get("prerelease") or not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+    if release.get("draft") or release.get("prerelease") or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
         return None
     version = tag[1:]
     if tuple(map(int, version.split("."))) <= tuple(map(int, installed.split("."))):
@@ -65,45 +71,20 @@ def start_windows_process(arguments, **options):
             set_dll_directory(ctypes.c_wchar_p(bundled_libraries))
 
 
-def github_cli() -> str:
-    locations = []
-    if getattr(sys, "frozen", False):
-        locations.append(Path(sys.executable).parent)
-    locations.extend(Path(os.environ.get(key, "")) / "GitHub CLI"
-                     for key in ("ProgramFiles", "ProgramFiles(x86)"))
-
-    locations.extend(Path(entry.strip('"')) for entry in os.get_exec_path())
-    for location in locations:
-        executable = location / "gh.exe"
-        if location.is_absolute() and executable.is_file():
-            return str(executable)
-    return ""
-
-
 class WindowsUpdates(QObject):
     changed = Signal()
 
     def __init__(self, directory: Path, parent=None):
         super().__init__(parent)
         self._directory = directory
-        self._phase = ""
         self._message = ""
         self._candidate = None
         self._installer = None
-        self._temporary = None
-        self._login_process = None
-        self._needs_login = False
-        self._login_timer = QTimer(self, interval=400)
-        self._login_timer.timeout.connect(self._finish_sign_in)
-        self._process = QProcess(self)
-        environment = QProcessEnvironment.systemEnvironment()
-        environment.insert("GH_PROMPT_DISABLED", "1")
-        environment.insert("GH_NO_UPDATE_NOTIFIER", "1")
-        self._process.setProcessEnvironment(environment)
-        self._process.finished.connect(self._finished)
-        self._process.errorOccurred.connect(self._process_error)
-        self._timeout = QTimer(self, singleShot=True, interval=180_000)
-        self._timeout.timeout.connect(self._timed_out)
+        self._reply = None
+        self._download = None
+        self._network = QNetworkAccessManager(self)
+        self._network.setRedirectPolicy(QNetworkRequest.RedirectPolicy.NoLessSafeRedirectPolicy)
+        self._network.setTransferTimeout(45_000)
 
     @Property(bool, constant=True)
     def supported(self):
@@ -111,130 +92,106 @@ class WindowsUpdates(QObject):
 
     @Property(bool, notify=changed)
     def busy(self):
-        return bool(self._phase)
+        return self._reply is not None
 
     @Property(bool, notify=changed)
     def ready(self):
         return self._installer is not None
-
-    @Property(bool, notify=changed)
-    def needsLogin(self):
-        return self._needs_login
 
     @Property(str, notify=changed)
     def message(self):
         return self._message
 
     def _complete(self, message):
-        self._timeout.stop()
-        self._phase = ""
-        if self._temporary is not None:
-            self._temporary.cleanup()
-            self._temporary = None
+        self._reply = None
+        if self._download is not None:
+            if self._download.isOpen():
+                self._download.cancelWriting()
+            self._download.deleteLater()
+            self._download = None
         self._message = message
         self.changed.emit()
 
-    def _run(self, phase, message, arguments):
-        self._phase = phase
-        self._message = message
-        self._timeout.start()
-        self.changed.emit()
-        self._process.start(self._cli, arguments)
+    def _get(self, url, accept, finished):
+        request = QNetworkRequest(QUrl(url))
+        request.setRawHeader(b"User-Agent", f"Dnevnik/{__version__}".encode("ascii"))
+        request.setRawHeader(b"Accept", accept)
+        self._reply = self._network.get(request)
+        self._reply.finished.connect(finished)
+        return self._reply
 
     @Slot()
     def check(self):
-        if not self.supported or self.busy or self._process.state() != QProcess.ProcessState.NotRunning:
+        if not self.supported or self.busy:
             return
         self._installer = None
         self._candidate = None
-        self._needs_login = False
-        self._cli = github_cli()
-        if not self._cli:
-            self._complete("Липсва модулът за обновяване. Инсталирай „Дневник“ от официалния Windows пакет.")
-            return
-        self._run("check", "Проверявам за нова версия…", [
-            "api", "--hostname", "github.com", f"repos/{REPOSITORY}/releases/latest",
-        ])
-
-    @Slot()
-    def signIn(self):
-        if not self.supported or not self._needs_login or self.busy:
-            return
-        try:
-            environment = os.environ.copy()
-            environment.pop("GH_PROMPT_DISABLED", None)
-            self._login_process = start_windows_process([
-                self._cli, "auth", "login", "--hostname", "github.com", "--web", "--clipboard",
-                "--git-protocol", "https", "--skip-ssh-key",
-            ], creationflags=subprocess.CREATE_NEW_CONSOLE, env=environment)
-        except OSError:
-            self._complete("Входът в GitHub не можа да се стартира.")
-            return
-        self._phase = "signIn"
-        self._message = "Потвърди входа в GitHub от отворения прозорец."
-        self._login_timer.start()
+        self._get(RELEASE_METADATA_URL, b"application/vnd.github+json", self._release_received)
+        self._message = "Проверявам за нова версия…"
         self.changed.emit()
 
-    def _finish_sign_in(self):
-        result = self._login_process.poll()
-        if result is None:
+    def _release_received(self):
+        reply = self._reply
+        reply.deleteLater()
+        status = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
+        if status == 404:
+            self._complete("Няма достъпна версия. Провери дали хранилището е публично и дали има публикуван Windows инсталатор.")
             return
-        self._login_timer.stop()
-        self._login_process = None
-        if result == 0:
-            self._phase = ""
-            self.check()
-        else:
-            self._complete("Входът не завърши. Можеш да опиташ отново.")
-
-    def _finished(self, exit_code, exit_status):
-        output = bytes(self._process.readAllStandardOutput())
-        error = bytes(self._process.readAllStandardError()).decode("utf-8", errors="replace")
-        if not self._phase:
-            return
-        if exit_code or exit_status != QProcess.ExitStatus.NormalExit:
-            if self._phase == "check":
-                self._needs_login = any(text in error.lower() for text in (
-                    "gh auth login", "http 401", "http 403", "http 404",
-                ))
-                message = ("Влез с GitHub акаунта с достъп до „Дневник“."
-                           if self._needs_login else "Проверката за обновяване не завърши. Опитай отново.")
-            else:
-                message = "Изтеглянето не завърши. Опитай отново."
-            self._complete(message)
+        if reply.error() != QNetworkReply.NetworkError.NoError:
+            self._complete("Проверката за обновяване не завърши. Опитай отново.")
             return
         try:
-            if self._phase == "check":
-                self._candidate = select_update(json.loads(output), __version__)
-                if self._candidate is None:
-                    self._complete("Използваш последната версия.")
-                    return
-                self._directory.mkdir(parents=True, exist_ok=True)
-                self._temporary = TemporaryDirectory(dir=self._directory)
-                self._run("download", f"Изтеглям версия {self._candidate.tag[1:]}…", [
-                    "release", "download", self._candidate.tag,
-                    "--repo", f"github.com/{REPOSITORY}", "--pattern", self._candidate.filename,
-                    "--dir", self._temporary.name,
-                ])
-                return
-            downloaded = Path(self._temporary.name) / self._candidate.filename
-            if not self._candidate.matches(downloaded):
-                self._complete("Изтегленият файл не премина проверката. Опитай отново.")
-                return
-            self._installer = downloaded.replace(self._directory / self._candidate.filename)
-        except (OSError, ValueError, KeyError, TypeError):
-            message = ("Не успях да проверя инсталатора за новата версия."
-                       if self._phase == "check" else "Инсталаторът не можа да се запази или провери.")
-            self._complete(message)
+            self._candidate = select_update(json.loads(bytes(reply.readAll())), __version__)
+        except (ValueError, KeyError, TypeError, AttributeError):
+            self._complete("Новата версия няма проверим Windows инсталатор.")
             return
-        self._complete(f"Версия {self._candidate.tag[1:]} е готова за инсталиране.")
+        if self._candidate is None:
+            self._complete("Използваш последната версия.")
+            return
+        try:
+            self._directory.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            self._complete("Папката за инсталатора не можа да се създаде.")
+            return
 
-    def _process_error(self, error):
-        if error == QProcess.ProcessError.FailedToStart:
-            self._complete("GitHub CLI не можа да се стартира.")
+        path = self._directory / self._candidate.filename
+        self._download = QSaveFile(str(path), self)
+        if not self._download.open(QIODevice.OpenModeFlag.WriteOnly):
+            self._complete("Инсталаторът не може да се запише.")
+            return
+        self._checksum = sha256()
+        self._write_failed = False
+        download = self._get(self._candidate.url, b"application/octet-stream", self._installer_received)
+        download.setReadBufferSize(256 * 1024)
+        download.readyRead.connect(self._write_download)
+        self._message = f"Изтеглям версия {self._candidate.tag[1:]}…"
+        self.changed.emit()
 
-    def _timed_out(self):
-        self._process.kill()
+    def _write_download(self):
+        chunk = bytes(self._reply.readAll())
+        if self._download.write(chunk) != len(chunk):
+            self._write_failed = True
+            if self._reply.isRunning():
+                self._reply.abort()
+            return
+        self._checksum.update(chunk)
+
+    def _installer_received(self):
+        reply = self._reply
+        reply.deleteLater()
+        if not self._write_failed and reply.error() == QNetworkReply.NetworkError.NoError:
+            self._write_download()
+        if self._write_failed:
+            self._complete("Инсталаторът не може да се запише.")
+        elif reply.error() != QNetworkReply.NetworkError.NoError:
+            self._complete("Изтеглянето не завърши. Опитай отново.")
+        elif self._checksum.hexdigest() != self._candidate.checksum:
+            self._complete("Изтегленият файл не премина проверката. Опитай отново.")
+        elif not self._download.commit():
+            self._complete("Инсталаторът не може да се запише.")
+        else:
+            self._installer = self._directory / self._candidate.filename
+            self._complete(f"Версия {self._candidate.tag[1:]} е готова за инсталиране.")
 
     @Slot(result=bool)
     def install(self):

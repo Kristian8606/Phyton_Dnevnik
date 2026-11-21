@@ -22,6 +22,10 @@ WizardStyle=modern
 [Files]
 Source: "..\dist\Dnevnik\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+Type: files; Name: "{app}\gh.exe"
+Type: files; Name: "{app}\GitHub-CLI-LICENSE.txt"
+
 [Icons]
 Name: "{autoprograms}\Дневник"; Filename: "{app}\Dnevnik.exe"
 
