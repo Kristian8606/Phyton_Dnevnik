@@ -3,11 +3,13 @@
 from argparse import ArgumentParser, SUPPRESS
 from datetime import date
 from pathlib import Path
+import sqlite3
 import sys
 
 from PySide6.QtCore import QLockFile, QStandardPaths
 from PySide6.QtGui import QGuiApplication
 
+from .data_location import default_database
 from .desktop import make_window
 from .demo import prepare_demo
 from . import __version__
@@ -22,15 +24,16 @@ def main() -> int:
     database_options.add_argument("--demo", action="store_true", help="Отвори отделна база с тестови дни.")
     args = parser.parse_args()
     app = QGuiApplication(sys.argv[:1])
-    # Keep the Qt data location compatible with existing installations.
-    app.setApplicationName("KasovDnevnik")
+    app.setApplicationName("Dnevnik")
     app.setApplicationDisplayName("Дневник")
     app.setApplicationVersion(__version__)
     data_directory = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))
-    database = args.database or data_directory / "cash-ledger.sqlite3"
+    try:
+        database = args.database or default_database(data_directory, demo=args.demo)
+    except (OSError, sqlite3.Error) as exc:
+        parser.exit(1, f"Записите не можаха да се прехвърлят. {exc}\n")
     if args.demo:
         data_directory.mkdir(parents=True, exist_ok=True)
-        database = data_directory / "cash-ledger-test-days.sqlite3"
         lock = QLockFile(str(database.with_suffix(".seed.lock")))
         if not lock.tryLock(5000):
             parser.exit(1, "Подготовката на тестовите дни вече е стартирана.\n")

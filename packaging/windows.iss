@@ -6,7 +6,8 @@
 AppId={{D9028ED7-4D7B-40B7-8485-D4C195B2FFEE}
 AppName=Дневник
 AppVersion={#AppVersion}
-DefaultDirName={localappdata}\Programs\KasovDnevnik
+DefaultDirName={localappdata}\Programs\Dnevnik
+UsePreviousAppDir=no
 DefaultGroupName=Дневник
 UninstallDisplayIcon={app}\Dnevnik.exe
 OutputDir=..\installers

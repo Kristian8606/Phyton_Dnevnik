@@ -28,7 +28,7 @@ if sys.platform == "darwin":
     app = BUNDLE(
         bundle,
         name=name + ".app",
-        bundle_identifier="app.kasovdnevnik.desktop",
+        bundle_identifier="app.dnevnik.desktop",
         version=version,
         info_plist={"CFBundleName": "Дневник", "CFBundleDisplayName": "Дневник", "CFBundleVersion": version},
     )
