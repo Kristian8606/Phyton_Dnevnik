@@ -843,6 +843,12 @@ ApplicationWindow {
                             win.updates.check()
                     }
                 }
+                LedgerButton {
+                    visible: win.updates.needsLogin
+                    enabled: !win.updates.busy
+                    text: "Вход в GitHub"
+                    onClicked: win.updates.signIn()
+                }
                 LedgerText {
                     Layout.fillWidth: true
                     visible: text.length > 0
@@ -868,7 +874,7 @@ ApplicationWindow {
         contentItem: ColumnLayout {
             spacing: 12
             LedgerText {
-                text: "Запази въведените операции, преди да продължиш. Дневник ще се затвори."
+                text: "Запази въведените операции, преди да продължиш. След обновяването „Дневник“ ще се отвори отново."
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }
@@ -876,7 +882,7 @@ ApplicationWindow {
                 Layout.alignment: Qt.AlignRight
                 LedgerButton { text: "Отказ"; onClicked: installUpdateDialog.close() }
                 LedgerButton {
-                    text: "Инсталирай"
+                    text: "Обнови и отвори отново"
                     primary: true
                     onClicked: {
                         installUpdateDialog.close()

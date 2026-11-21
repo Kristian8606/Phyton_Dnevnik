@@ -2,11 +2,29 @@ from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
-from cash_ledger.updates import select_update
+from cash_ledger.updates import github_cli, installer_arguments, select_update
 
 
 class WindowsUpdateTests(unittest.TestCase):
+    def test_installer_uses_current_folder_and_waits_for_the_running_program(self):
+        path = Path("Apps with spaces") / "Dnevnik.exe"
+        arguments = installer_arguments(path, 1234)
+        self.assertIn("/SILENT", arguments)
+        self.assertIn("/NORESTART", arguments)
+        self.assertIn("/NOCLOSEAPPLICATIONS", arguments)
+        self.assertIn("/DnevnikParent=1234", arguments)
+        self.assertIn(f"/DIR={path.parent}", arguments)
+
+    def test_uses_the_cli_bundled_next_to_the_installed_program(self):
+        with TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            bundled_cli = folder / "gh.exe"
+            bundled_cli.touch()
+            with patch("sys.frozen", True, create=True), patch("sys.executable", str(folder / "Dnevnik.exe")):
+                self.assertEqual(github_cli(), str(bundled_cli))
+
     def test_only_newer_stable_versions_are_offered(self):
         self.assertIsNone(select_update({"tag_name": "v0.1.4"}, "0.1.4"))
         self.assertIsNone(select_update({"tag_name": "v0.1.4"}, "0.1.10"))

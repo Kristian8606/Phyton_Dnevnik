@@ -1,11 +1,13 @@
 """Check and download Windows installers from the project's GitHub releases."""
 
+import ctypes
 from dataclasses import dataclass
 from hashlib import file_digest
 import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 from tempfile import TemporaryDirectory
 
@@ -43,11 +45,33 @@ def select_update(release: dict, installed: str) -> Update | None:
     raise ValueError("Новата версия няма проверим Windows инсталатор.")
 
 
-def github_cli() -> str:
-    locations = [
-        Path(os.environ.get(key, "")) / "GitHub CLI"
-        for key in ("ProgramFiles", "ProgramFiles(x86)")
+def installer_arguments(application: Path, process_id: int) -> list[str]:
+    return [
+        "/SILENT", "/SP-", "/NORESTART", "/NOCLOSEAPPLICATIONS",
+        f"/DnevnikParent={process_id}", f"/DIR={application.parent}",
     ]
+
+
+def start_windows_process(arguments, **options):
+    # An external installer must load system DLLs independently of PyInstaller.
+    bundled_libraries = getattr(sys, "_MEIPASS", None)
+    if bundled_libraries:
+        set_dll_directory = ctypes.windll.kernel32.SetDllDirectoryW
+        set_dll_directory(None)
+    try:
+        return subprocess.Popen(arguments, **options)
+    finally:
+        if bundled_libraries:
+            set_dll_directory(ctypes.c_wchar_p(bundled_libraries))
+
+
+def github_cli() -> str:
+    locations = []
+    if getattr(sys, "frozen", False):
+        locations.append(Path(sys.executable).parent)
+    locations.extend(Path(os.environ.get(key, "")) / "GitHub CLI"
+                     for key in ("ProgramFiles", "ProgramFiles(x86)"))
+
     locations.extend(Path(entry.strip('"')) for entry in os.get_exec_path())
     for location in locations:
         executable = location / "gh.exe"
@@ -67,6 +91,10 @@ class WindowsUpdates(QObject):
         self._candidate = None
         self._installer = None
         self._temporary = None
+        self._login_process = None
+        self._needs_login = False
+        self._login_timer = QTimer(self, interval=400)
+        self._login_timer.timeout.connect(self._finish_sign_in)
         self._process = QProcess(self)
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert("GH_PROMPT_DISABLED", "1")
@@ -88,6 +116,10 @@ class WindowsUpdates(QObject):
     @Property(bool, notify=changed)
     def ready(self):
         return self._installer is not None
+
+    @Property(bool, notify=changed)
+    def needsLogin(self):
+        return self._needs_login
 
     @Property(str, notify=changed)
     def message(self):
@@ -115,22 +147,60 @@ class WindowsUpdates(QObject):
             return
         self._installer = None
         self._candidate = None
+        self._needs_login = False
         self._cli = github_cli()
         if not self._cli:
-            self._complete("Инсталирай GitHub CLI и влез в GitHub, за да провериш за обновяване.")
+            self._complete("Липсва модулът за обновяване. Инсталирай „Дневник“ от официалния Windows пакет.")
             return
         self._run("check", "Проверявам за нова версия…", [
             "api", "--hostname", "github.com", f"repos/{REPOSITORY}/releases/latest",
         ])
 
+    @Slot()
+    def signIn(self):
+        if not self.supported or not self._needs_login or self.busy:
+            return
+        try:
+            environment = os.environ.copy()
+            environment.pop("GH_PROMPT_DISABLED", None)
+            self._login_process = start_windows_process([
+                self._cli, "auth", "login", "--hostname", "github.com", "--web", "--clipboard",
+                "--git-protocol", "https", "--skip-ssh-key",
+            ], creationflags=subprocess.CREATE_NEW_CONSOLE, env=environment)
+        except OSError:
+            self._complete("Входът в GitHub не можа да се стартира.")
+            return
+        self._phase = "signIn"
+        self._message = "Потвърди входа в GitHub от отворения прозорец."
+        self._login_timer.start()
+        self.changed.emit()
+
+    def _finish_sign_in(self):
+        result = self._login_process.poll()
+        if result is None:
+            return
+        self._login_timer.stop()
+        self._login_process = None
+        if result == 0:
+            self._phase = ""
+            self.check()
+        else:
+            self._complete("Входът не завърши. Можеш да опиташ отново.")
+
     def _finished(self, exit_code, exit_status):
         output = bytes(self._process.readAllStandardOutput())
-        self._process.readAllStandardError()
+        error = bytes(self._process.readAllStandardError()).decode("utf-8", errors="replace")
         if not self._phase:
             return
         if exit_code or exit_status != QProcess.ExitStatus.NormalExit:
-            message = ("Провери дали си влязъл през GitHub CLI и имаш достъп до хранилището."
-                       if self._phase == "check" else "Изтеглянето не завърши. Опитай отново.")
+            if self._phase == "check":
+                self._needs_login = any(text in error.lower() for text in (
+                    "gh auth login", "http 401", "http 403", "http 404",
+                ))
+                message = ("Влез с GitHub акаунта с достъп до „Дневник“."
+                           if self._needs_login else "Проверката за обновяване не завърши. Опитай отново.")
+            else:
+                message = "Изтеглянето не завърши. Опитай отново."
             self._complete(message)
             return
         try:
@@ -173,7 +243,11 @@ class WindowsUpdates(QObject):
         try:
             if not self._candidate.matches(self._installer):
                 raise OSError
-            os.startfile(str(self._installer))
+            application = Path(sys.executable)
+            arguments = installer_arguments(application, os.getpid())
+            if not getattr(sys, "frozen", False):
+                arguments.pop()
+            start_windows_process([str(self._installer), *arguments])
         except OSError:
             self._installer = None
             self._complete("Инсталаторът не можа да се стартира. Провери за обновяване отново.")

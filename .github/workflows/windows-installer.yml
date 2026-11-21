@@ -35,6 +35,14 @@ jobs:
           }
           python packaging/build_app.py
           if ($LASTEXITCODE -ne 0) { throw 'Application bundling failed.' }
+          $cli = (Get-Command gh.exe -CommandType Application -ErrorAction Stop).Source
+          $cliVersion = & $cli --version
+          if ($LASTEXITCODE -ne 0 -or $cliVersion[0] -notmatch '^gh version (\d+\.\d+\.\d+)') {
+            throw 'Could not read the bundled GitHub CLI version.'
+          }
+          $cliTag = "v$($Matches[1])"
+          Copy-Item -LiteralPath $cli -Destination 'dist/Dnevnik/gh.exe'
+          Invoke-WebRequest "https://raw.githubusercontent.com/cli/cli/$cliTag/LICENSE" -OutFile 'dist/Dnevnik/GitHub-CLI-LICENSE.txt'
           $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (!(Test-Path -LiteralPath $compiler)) { throw "Inno Setup not found at $compiler." }
           & $compiler "/DAppVersion=$version" packaging/windows.iss
@@ -64,7 +72,29 @@ jobs:
           InstallAndCheck
           python -c "from cash_ledger.ledger import Ledger; from datetime import date; from pathlib import Path; import sys; ledger = Ledger(Path(sys.argv[1])); assert ledger.day(date.today()).summary['cash'] == 13700; ledger.save(date.today(), {'income': '23'})" $sqliteFile
           if ($LASTEXITCODE -ne 0) { throw 'Could not migrate the test database.' }
-          InstallAndCheck
+          $appPath = Join-Path $targetDir 'Dnevnik.exe'
+          $bundledCli = Join-Path $targetDir 'gh.exe'
+          & $bundledCli --version
+          if ($LASTEXITCODE -ne 0) { throw 'The installed GitHub client could not start.' }
+          $previous = Start-Process -FilePath $appPath -PassThru
+          $updateArgs = $installArgs + @('/SP-', '/NOCLOSEAPPLICATIONS', "/DnevnikParent=$($previous.Id)")
+          $update = Start-Process -FilePath $installer.FullName -PassThru -ArgumentList $updateArgs
+          try {
+            Start-Sleep -Seconds 2
+            if ($previous.HasExited -or $update.HasExited) { throw 'The update did not wait for the running application.' }
+            Stop-Process -Id $previous.Id
+            if (!$update.WaitForExit(120000) -or $update.ExitCode -ne 0) {
+              throw 'The in-app installation did not complete.'
+            }
+            $reopened = Get-Process -Name Dnevnik -ErrorAction SilentlyContinue |
+              Where-Object { $_.Path -eq $appPath -and $_.Id -ne $previous.Id }
+            if (!$reopened) { throw 'The application was not reopened after the update.' }
+            $reopened | Stop-Process
+          }
+          finally {
+            if (!$previous.HasExited) { Stop-Process -Id $previous.Id }
+            if (!$update.HasExited) { Stop-Process -Id $update.Id }
+          }
           python -c "from cash_ledger.ledger import Ledger; from datetime import date; from pathlib import Path; import sys; assert Ledger(Path(sys.argv[1])).day(date.today()).summary['cash'] == 16000" $sqliteFile
           if ($LASTEXITCODE -ne 0) { throw 'The installation did not preserve the test records.' }
       - uses: actions/upload-artifact@v6
