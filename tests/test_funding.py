@@ -1,3 +1,4 @@
+from contextlib import closing
 from datetime import date, timedelta
 from pathlib import Path
 import sqlite3
@@ -23,7 +24,7 @@ class FundingTests(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             database = Path(temporary) / "ledger.sqlite3"
             Ledger(database).save(DAY, {"cost": "50"})
-            with sqlite3.connect(database) as connection:
+            with closing(sqlite3.connect(database)) as connection, connection:
                 connection.execute("UPDATE settings SET opening_cash = 122500 WHERE singleton = 1")
             first = Ledger(database)
             prior = DAY - timedelta(days=1)
@@ -40,7 +41,7 @@ class FundingTests(unittest.TestCase):
             directory = Path(temporary)
             original = directory / "old.sqlite3"
             Ledger(original).save(DAY, {"income": "40"})
-            with sqlite3.connect(original) as connection:
+            with closing(sqlite3.connect(original)) as connection, connection:
                 connection.execute("UPDATE settings SET opening_cash = -1000 WHERE singleton = 1")
             target = Ledger(directory / "current.sqlite3")
             target.restore(original)

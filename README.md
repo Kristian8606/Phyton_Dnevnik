@@ -47,8 +47,8 @@ python3.11 -m venv .venv
 ```sh
 git remote add origin <URL-на-новото-хранилище>
 git push -u origin main
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
 В **Actions → Windows installer** изтегли артефакта `Dnevnik-windows-x64` и стартирай файла `.exe` в него. Процесът също може да бъде стартиран ръчно от **Run workflow**. За обновяване запиши промените, увеличи версията, качи новия Git таг и пусни новия инсталатор на работния компютър. SQLite файловете и генерираните пакети се пазят извън Git.

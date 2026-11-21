@@ -13,8 +13,8 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           architecture: x64
@@ -65,7 +65,7 @@ jobs:
           InstallAndCheck
           python -c "from cash_ledger.ledger import Ledger; from datetime import date; from pathlib import Path; import sys; assert Ledger(Path(sys.argv[1])).day(date.today()).summary['cash'] == 13700" $sqliteFile
           if ($LASTEXITCODE -ne 0) { throw 'The installation did not preserve the test records.' }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: Dnevnik-windows-x64
           path: installers/Dnevnik-*-windows-x64.exe

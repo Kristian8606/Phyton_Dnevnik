@@ -1,3 +1,4 @@
+from contextlib import closing
 from datetime import date, timedelta
 from pathlib import Path
 import sqlite3
@@ -87,7 +88,7 @@ class EditAndArchiveTests(unittest.TestCase):
             self.store.backup(archive)
         self.store.save(DAY, {"income": "42"})
         unrelated = self.directory / "unrelated.sqlite3"
-        with sqlite3.connect(unrelated) as db:
+        with closing(sqlite3.connect(unrelated)) as db, db:
             db.execute("PRAGMA user_version = 1")
             db.execute("CREATE TABLE unrelated(x)")
         with self.assertRaises(ValidationError):
