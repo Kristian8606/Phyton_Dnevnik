@@ -1,4 +1,4 @@
-# Касов дневник
+# Дневник
 
 Локално десктоп приложение с Python 3.11, Qt Quick и SQLite. Отвори `Стартирай.command` на macOS или стартирай `.venv/bin/python -m cash_ledger` от тази директория.
 
@@ -47,11 +47,11 @@ python3.11 -m venv .venv
 ```sh
 git remote add origin <URL-на-новото-хранилище>
 git push -u origin main
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
-В **Actions → Windows installer** изтегли артефакта `KasovDnevnik-windows-x64` и стартирай файла `.exe` в него. Процесът също може да бъде стартиран ръчно от **Run workflow**. За обновяване запиши промените, увеличи версията, качи новия Git таг и пусни новия инсталатор на работния компютър. SQLite файловете и генерираните пакети се пазят извън Git.
+В **Actions → Windows installer** изтегли артефакта `Dnevnik-windows-x64` и стартирай файла `.exe` в него. Процесът също може да бъде стартиран ръчно от **Run workflow**. За обновяване запиши промените, увеличи версията, качи новия Git таг и пусни новия инсталатор на работния компютър. SQLite файловете и генерираните пакети се пазят извън Git.
 
 ### Самостоятелен пакет на компютъра за разработка
 
@@ -60,4 +60,4 @@ python -m pip install -r requirements-build.txt
 python packaging/build_app.py
 ```
 
-При macOS резултатът е `dist/KasovDnevnik.app`. При Windows резултатът е `dist/KasovDnevnik`, а `packaging/windows.iss` е проектът за Inno Setup. Пакетът се изгражда на целевата операционна система.
+При macOS резултатът е `dist/Dnevnik.app`. При Windows резултатът е `dist/Dnevnik`, а `packaging/windows.iss` е проектът за Inno Setup. Пакетът се изгражда на целевата операционна система.

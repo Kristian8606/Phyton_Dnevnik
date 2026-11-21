@@ -14,7 +14,7 @@ from . import __version__
 
 
 def main() -> int:
-    parser = ArgumentParser(description="Касов дневник")
+    parser = ArgumentParser(description="Дневник")
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument("--check-startup", action="store_true", help=SUPPRESS)
     database_options = parser.add_mutually_exclusive_group()
@@ -22,8 +22,9 @@ def main() -> int:
     database_options.add_argument("--demo", action="store_true", help="Отвори отделна база с тестови дни.")
     args = parser.parse_args()
     app = QGuiApplication(sys.argv[:1])
+    # Keep the Qt data location compatible with existing installations.
     app.setApplicationName("KasovDnevnik")
-    app.setApplicationDisplayName("Касов дневник")
+    app.setApplicationDisplayName("Дневник")
     app.setApplicationVersion(__version__)
     data_directory = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))
     database = args.database or data_directory / "cash-ledger.sqlite3"

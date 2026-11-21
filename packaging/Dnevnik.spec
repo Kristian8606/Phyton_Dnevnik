@@ -6,7 +6,7 @@ import runpy
 import sys
 
 root = Path(SPECPATH).parent
-name = "KasovDnevnik"
+name = "Dnevnik"
 version = runpy.run_path(root / "cash_ledger" / "__init__.py")["__version__"]
 resources = [(str(path), "cash_ledger") for path in sorted((root / "cash_ledger").glob("*.qml"))]
 
@@ -30,5 +30,5 @@ if sys.platform == "darwin":
         name=name + ".app",
         bundle_identifier="app.kasovdnevnik.desktop",
         version=version,
-        info_plist={"CFBundleDisplayName": "Касов дневник", "CFBundleVersion": version},
+        info_plist={"CFBundleName": "Дневник", "CFBundleDisplayName": "Дневник", "CFBundleVersion": version},
     )

@@ -1,4 +1,4 @@
-"""Validation, exact arithmetic and SQLite storage for the cash ledger."""
+"""Validation, exact arithmetic and SQLite storage for the desktop journal."""
 
 from contextlib import closing, contextmanager
 from dataclasses import dataclass
@@ -397,7 +397,7 @@ class Ledger:
 
     def restore(self, archive: Path) -> Path:
         if archive.samefile(self.path):
-            raise ValidationError("Избери архивен файл на касовия дневник.")
+            raise ValidationError("Избери архивен файл на дневника.")
         with closing(sqlite3.connect(archive.resolve().as_uri() + "?mode=ro", uri=True)) as source:
             source.execute("PRAGMA trusted_schema = OFF")
             source.execute("BEGIN")
@@ -406,7 +406,7 @@ class Ledger:
                               tuple(destination.execute("PRAGMA user_version").fetchone())
                               and _schema_signature(source) == _schema_signature(destination))
                 if not compatible or source.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
-                    raise ValidationError("Файлът не е валиден архив на тази версия на касовия дневник.")
+                    raise ValidationError("Файлът не е валиден архив на тази версия на дневника.")
                 if source.execute("SELECT opening_cash FROM settings WHERE singleton = 1").fetchone() is None:
                     raise ValidationError("В архива липсват настройките на дневника.")
                 stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")

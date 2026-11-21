@@ -13,5 +13,5 @@ if __name__ == "__main__":
     os.environ.setdefault("PYINSTALLER_CONFIG_DIR", str(ROOT / "build" / "cache"))
     run([
         "--noconfirm", "--workpath", str(ROOT / "build"), "--distpath", str(ROOT / "dist"),
-        str(ROOT / "packaging" / "KasovDnevnik.spec"),
+        str(ROOT / "packaging" / "Dnevnik.spec"),
     ])

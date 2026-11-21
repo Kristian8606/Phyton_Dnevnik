@@ -8,7 +8,7 @@ ApplicationWindow {
     required property QtObject controller
     visible: true
     property bool testMode: false
-    title: testMode ? "Касов дневник · Тестови дни" : "Касов дневник"
+    title: testMode ? "Дневник · Тестови дни" : "Дневник"
     width: Math.max(800, Math.min(1400, Screen.desktopAvailableWidth - 28))
     height: Math.max(540, Math.min(760, Screen.desktopAvailableHeight - 60))
     minimumWidth: 760
@@ -208,7 +208,7 @@ ApplicationWindow {
                 radius: 8
                 LedgerText { anchors.centerIn: parent; text: "≡"; color: win.accent; font.pixelSize: 17 }
             }
-            LedgerText { text: "Касов дневник"; font.pixelSize: 16; font.weight: Font.DemiBold }
+            LedgerText { text: "Дневник"; font.pixelSize: 16; font.weight: Font.DemiBold }
             LedgerText {
                 visible: win.testMode
                 text: "Тестова база"
@@ -894,7 +894,7 @@ ApplicationWindow {
 
     NativeDialogs.FileDialog {
         id: backupPicker
-        title: "Създай архив на касовия дневник"
+        title: "Създай архив на дневника"
         fileMode: NativeDialogs.FileDialog.SaveFile
         defaultSuffix: "sqlite3"
         options: NativeDialogs.FileDialog.DontConfirmOverwrite
@@ -903,7 +903,7 @@ ApplicationWindow {
     }
     NativeDialogs.FileDialog {
         id: restorePicker
-        title: "Избери архив на касовия дневник"
+        title: "Избери архив на дневника"
         nameFilters: ["SQLite (*.sqlite3 *.sqlite)", "Всички файлове (*)"]
         onAccepted: {
             restoreConfirm.archive = selectedFile

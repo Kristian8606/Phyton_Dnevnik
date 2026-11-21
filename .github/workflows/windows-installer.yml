@@ -42,7 +42,7 @@ jobs:
       - name: Check installation and data preservation
         shell: pwsh
         run: |
-          $installer = Get-ChildItem installers/KasovDnevnik-*-windows-x64.exe | Select-Object -First 1
+          $installer = Get-ChildItem installers/Dnevnik-*-windows-x64.exe | Select-Object -First 1
           if (!$installer) { throw 'Installer file missing.' }
           $targetDir = Join-Path $env:RUNNER_TEMP 'ledger-install-check'
           $sqliteFile = Join-Path $env:LOCALAPPDATA 'KasovDnevnik\cash-ledger.sqlite3'
@@ -54,7 +54,7 @@ jobs:
           function InstallAndCheck {
             $install = Start-Process -FilePath $installer.FullName -Wait -PassThru -ArgumentList $installArgs
             if ($install.ExitCode -ne 0) { throw "Installer returned $($install.ExitCode)." }
-            $app = Start-Process -FilePath (Join-Path $targetDir 'KasovDnevnik.exe') -Wait -PassThru -ArgumentList '--check-startup'
+            $app = Start-Process -FilePath (Join-Path $targetDir 'Dnevnik.exe') -Wait -PassThru -ArgumentList '--check-startup'
             if ($app.ExitCode -ne 0 -or !(Test-Path -LiteralPath $sqliteFile)) {
               throw "Packaged application failed its startup check. Exit code $($app.ExitCode)."
             }
@@ -67,6 +67,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'The installation did not preserve the test records.' }
       - uses: actions/upload-artifact@v4
         with:
-          name: KasovDnevnik-windows-x64
-          path: installers/KasovDnevnik-*-windows-x64.exe
+          name: Dnevnik-windows-x64
+          path: installers/Dnevnik-*-windows-x64.exe
           if-no-files-found: error
