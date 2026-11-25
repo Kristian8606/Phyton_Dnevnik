@@ -130,7 +130,7 @@ ApplicationWindow {
             AccountField {
                 id: newPassword
                 objectName: "resetPassword"
-                placeholderText: "Нова парола"
+                placeholderText: "Парола за новия администратор"
                 maximumLength: 512
                 echoMode: TextInput.Password
                 onAccepted: resetDialog.submitReset()
@@ -176,8 +176,9 @@ ApplicationWindow {
                 font.weight: Font.DemiBold
             }
             Label {
-                text: access.addingUser ? "Нов потребител"
-                                                : (access.registering ? "Регистрация" : "Вход")
+                objectName: "accountFormTitle"
+                text: !access.registering ? "Вход"
+                      : access.needsAdministrator ? "Нов служител" : "Нов администратор"
                 color: access.ink
                 font.pixelSize: 25
                 font.weight: Font.DemiBold
@@ -193,7 +194,8 @@ ApplicationWindow {
             AccountField {
                 id: password
                 objectName: "loginPassword"
-                placeholderText: "Парола"
+                placeholderText: !access.registering ? "Парола"
+                                 : access.needsAdministrator ? "Парола за служителя" : "Парола за администратора"
                 maximumLength: 512
                 echoMode: TextInput.Password
                 onAccepted: access.registering ? verification.forceActiveFocus() : access.submit()
@@ -211,7 +213,7 @@ ApplicationWindow {
             AccountField {
                 id: administratorPassword
                 objectName: "administratorPassword"
-                placeholderText: "Парола на администратора"
+                placeholderText: "Парола на текущия администратор"
                 visible: access.needsAdministrator
                 maximumLength: 512
                 echoMode: TextInput.Password
@@ -235,7 +237,8 @@ ApplicationWindow {
             Button {
                 id: submitButton
                 objectName: "accountSubmitButton"
-                text: access.registering ? "Регистрирай" : "Влез"
+                text: !access.registering ? "Влез"
+                      : access.needsAdministrator ? "Добави служител" : "Създай администратор"
                 Layout.fillWidth: true
                 implicitHeight: 41
                 Layout.topMargin: 7
@@ -257,7 +260,7 @@ ApplicationWindow {
                 objectName: "registrationButton"
                 visible: !access.registering || access.addingUser
                 Layout.alignment: Qt.AlignHCenter
-                text: access.addingUser ? "Назад" : "Регистрация"
+                text: access.addingUser ? "Назад" : "Регистрация на служител"
                 flat: true
                 onClicked: {
                     if (access.addingUser)

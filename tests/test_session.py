@@ -49,6 +49,9 @@ class SessionTests(unittest.TestCase):
         try:
             app.processEvents()
             self.assertEqual(opens, [])
+            self.assertEqual(field("accountFormTitle").property("text"), "Нов администратор")
+            self.assertEqual(field("loginPassword").property("placeholderText"), "Парола за администратора")
+            self.assertFalse(field("administratorPassword").property("visible"))
             submit("Касиер", "test-secret", "1234")
             self.assertEqual(opens, [])
             self.assertIn("Кодът", field("loginError").property("text"))
@@ -66,7 +69,12 @@ class SessionTests(unittest.TestCase):
             app.processEvents()
             self.assertTrue(gate.isVisible())
             self.assertFalse(field("registrationCode").property("visible"))
+            self.assertEqual(field("registrationButton").property("text"), "Регистрация на служител")
             click("registrationButton")
+            self.assertEqual(field("accountFormTitle").property("text"), "Нов служител")
+            self.assertEqual(field("loginPassword").property("placeholderText"), "Парола за служителя")
+            self.assertEqual(field("administratorPassword").property("placeholderText"),
+                             "Парола на текущия администратор")
             self.assertTrue(field("administratorPassword").property("visible"))
             submit("Втори", "different-pass", "0000", "wrong")
             self.assertEqual(opens, [database])

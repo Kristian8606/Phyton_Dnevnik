@@ -360,7 +360,7 @@ ApplicationWindow {
                     MenuItem {
                         enabled: win.controller && win.controller.isAdministrator
                         visible: win.sessionEnabled
-                        text: "Нов потребител…"
+                        text: "Нов служител…"
                         onTriggered: win.registrationRequested()
                     }
                     MenuItem {
