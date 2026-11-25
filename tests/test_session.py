@@ -83,7 +83,7 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(journal.findChild(QObject, "activeUserLabel").property("text"), "Втори")
             member = journal.property("controller")
             self.assertFalse(member.isAdministrator)
-            self.assertIn("Само администраторът", session.setRecoveryCode("test-secret", "957321624"))
+            self.assertIn("Само администраторът", session.setRecoveryCode("test-secret", "0482"))
             member.revisionReport()
             ledger = Ledger(database)
             for name, secret in (("Втори", "different-pass"), ("Втори", "test-secret"),
@@ -107,7 +107,7 @@ class SessionTests(unittest.TestCase):
             gate.close()
             app.processEvents()
 
-    def test_forgotten_administrator_recovers_from_registration_with_personal_code(self):
+    def test_forgotten_administrator_recovers_from_sign_in_with_four_digit_code(self):
         app = QGuiApplication.instance() or QGuiApplication([])
         directory = Path(self.enterContext(TemporaryDirectory()))
         database = directory / "ledger.sqlite3"
@@ -138,24 +138,24 @@ class SessionTests(unittest.TestCase):
             journal = session._work_engine.rootObjects()[0]
             app.processEvents()
             password_field = item(journal, "recoverySettingsPassword")
+            self.assertFalse(password_field.property("visible"))
+            item(journal, "recoveryCodeMenuItem").triggered.emit()
+            app.processEvents()
             self.assertTrue(password_field.property("visible"))
             password_field.setProperty("text", "forgotten-password")
-            item(journal, "chosenRecoveryCode").setProperty("text", "957321624")
+            item(journal, "chosenRecoveryCode").setProperty("text", "0482")
             click(journal, "saveRecoveryCode")
-            self.assertTrue(accounts.has_numeric_recovery_code())
             self.assertFalse(password_field.property("visible"))
             session.sign_out()
             app.processEvents()
 
-            click(gate, "registrationButton")
             click(gate, "resetAdministratorButton")
-            item(gate, "resetRecoveryCode").setProperty("text", "123456789")
+            item(gate, "resetRecoveryCode").setProperty("text", "0000")
             item(gate, "resetUsername").setProperty("text", "Нов админ")
             item(gate, "resetPassword").setProperty("text", "new-password")
             click(gate, "confirmAdministratorReset")
             self.assertIn("грешен", item(gate, "resetError").property("text"))
-            item(gate, "resetRecoveryCode").setProperty("text", "957321624")
-            item(gate, "resetNewRecoveryCode").setProperty("text", "849627531")
+            item(gate, "resetRecoveryCode").setProperty("text", "0482")
             click(gate, "confirmAdministratorReset")
 
             self.assertFalse(item(gate, "registrationCode").property("visible"))

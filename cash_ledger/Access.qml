@@ -86,8 +86,7 @@ ApplicationWindow {
         title: "Нулирай администратора"
 
         function submitReset() {
-            const error = access.session.resetAdministrator(
-                recoveryCode.text, newUsername.text, newPassword.text, newRecoveryCode.text)
+            const error = access.session.resetAdministrator(recoveryCode.text, newUsername.text, newPassword.text)
             if (error) {
                 resetError.text = error
                 return
@@ -103,7 +102,6 @@ ApplicationWindow {
             recoveryCode.clear()
             newUsername.clear()
             newPassword.clear()
-            newRecoveryCode.clear()
             resetError.text = ""
         }
 
@@ -112,12 +110,12 @@ ApplicationWindow {
             Label {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: "Въведи текущия код и данните за администратора. Служителите и записите в дневника се запазват."
+                text: "Въведи кода за нулиране и данните за администратора."
             }
             AccountField {
                 id: recoveryCode
                 objectName: "resetRecoveryCode"
-                placeholderText: "Текущ код за възстановяване"
+                placeholderText: "Код за нулиране"
                 maximumLength: 128
                 echoMode: TextInput.Password
                 onAccepted: newUsername.forceActiveFocus()
@@ -135,21 +133,7 @@ ApplicationWindow {
                 placeholderText: "Нова парола"
                 maximumLength: 512
                 echoMode: TextInput.Password
-                onAccepted: newRecoveryCode.forceActiveFocus()
-            }
-            AccountField {
-                id: newRecoveryCode
-                objectName: "resetNewRecoveryCode"
-                placeholderText: "Нов код по желание"
-                inputMethodHints: Qt.ImhDigitsOnly
-                maximumLength: 9
-                echoMode: TextInput.PasswordEchoOnEdit
                 onAccepted: resetDialog.submitReset()
-            }
-            Label {
-                Layout.fillWidth: true
-                wrapMode: Text.WordWrap
-                text: "За нов код въведи девет цифри от 1 до 9. Празното поле запазва текущия код."
             }
             Label {
                 id: resetError

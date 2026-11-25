@@ -56,7 +56,7 @@ class DesktopSession(QObject):
 
     @Property(bool, notify=formChanged)
     def canResetAdministrator(self):
-        return self._adding_user and self._work_engine is None
+        return self._has_users and self._work_engine is None
 
     @Slot(str, str, str, str, result=str)
     def submit(self, username, password, code, administrator_password=""):
@@ -104,22 +104,14 @@ class DesktopSession(QObject):
         window.signOutRequested.connect(self.sign_out)
         window.registrationRequested.connect(self.add_user)
         self._access_engine.rootObjects()[0].hide()
-        if administrator and self._show_windows:
-            try:
-                configured = self._accounts.has_numeric_recovery_code()
-            except (OSError, sqlite3.Error):
-                window.showStatus("Кодът за възстановяване е недостъпен.")
-            else:
-                if not configured:
-                    window.promptForRecoveryCode()
         return ""
 
-    @Slot(str, str, str, str, result=str)
-    def resetAdministrator(self, code, username, password, new_code):
+    @Slot(str, str, str, result=str)
+    def resetAdministrator(self, code, username, password):
         if not self.canResetAdministrator:
-            return "Отвори „Регистрация“ от екрана за вход."
+            return "Отвори „Нулирай администратора“ от екрана за вход."
         try:
-            self._accounts.reset_administrator(code, username, password, new_code)
+            self._accounts.reset_administrator(code, username, password)
         except AccountError as exc:
             return str(exc)
         except (OSError, sqlite3.Error):
@@ -165,5 +157,6 @@ class DesktopSession(QObject):
         self._access_engine.rootObjects()[0].show()
         engine, self._work_engine = self._work_engine, None
         self._administrator_username = ""
+        self.formChanged.emit()
         engine.rootObjects()[0].close()
         engine.deleteLater()

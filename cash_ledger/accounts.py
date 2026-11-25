@@ -48,8 +48,8 @@ def _matches(record, password: str) -> bool:
 
 
 def _store_recovery_code(db: sqlite3.Connection, code: str):
-    if len(code) != 9 or any(digit not in "123456789" for digit in code):
-        raise AccountError("Въведи код от девет цифри, всяка от 1 до 9.")
+    if len(code) != 4 or not code.isascii() or not code.isdecimal():
+        raise AccountError("Въведи код от четири цифри.")
     salt = token_bytes(16)
     db.execute("""
         INSERT OR REPLACE INTO administrator_recovery (singleton, salt, code_hash, is_numeric)
@@ -117,10 +117,6 @@ class LocalAccounts:
             if administrator is None:
                 db.execute("INSERT INTO administrator VALUES (1, ?)", (key,))
 
-    def has_numeric_recovery_code(self) -> bool:
-        with closing(sqlite3.connect(self._path)) as db:
-            return db.execute("SELECT 1 FROM administrator_recovery WHERE is_numeric = 1").fetchone() is not None
-
     def set_recovery_code(self, username: str, password: str, code: str):
         with closing(sqlite3.connect(self._path)) as db, db:
             db.execute("BEGIN IMMEDIATE")
@@ -132,7 +128,7 @@ class LocalAccounts:
                 raise AccountError("Въведи правилната парола на администратора.")
             _store_recovery_code(db, code.strip())
 
-    def reset_administrator(self, code: str, username: str, password: str, new_code: str = ""):
+    def reset_administrator(self, code: str, username: str, password: str):
         with closing(sqlite3.connect(self._path)) as db, db:
             db.execute("PRAGMA foreign_keys = ON")
             db.execute("BEGIN IMMEDIATE")
@@ -170,10 +166,7 @@ class LocalAccounts:
                     raise AccountError("Това потребителско име вече е регистрирано.") from exc
                 db.execute("UPDATE administrator SET username_key = ? WHERE singleton = 1", (key,))
                 db.execute("DELETE FROM accounts WHERE username_key = ?", (old_key,))
-            if new_code.strip():
-                _store_recovery_code(db, new_code.strip())
-            else:
-                db.execute("UPDATE administrator_recovery SET failed_attempts = 0, retry_after = 0")
+            db.execute("UPDATE administrator_recovery SET failed_attempts = 0, retry_after = 0")
 
     def is_administrator(self, username: str) -> bool:
         with closing(sqlite3.connect(self._path)) as db:

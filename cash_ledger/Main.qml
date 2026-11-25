@@ -366,8 +366,8 @@ ApplicationWindow {
                     MenuItem {
                         objectName: "recoveryCodeMenuItem"
                         visible: win.accountSession && win.controller.isAdministrator
-                        text: "Код за възстановяване…"
-                        onTriggered: win.promptForRecoveryCode()
+                        text: "Код за нулиране…"
+                        onTriggered: recoverySettings.open()
                     }
                     MenuItem {
                         visible: win.sessionEnabled
@@ -933,16 +933,12 @@ ApplicationWindow {
         }
     }
 
-    function promptForRecoveryCode() {
-        recoverySettings.open()
-    }
-
     Dialog {
         id: recoverySettings
         anchors.centerIn: Overlay.overlay
         width: 410
         modal: true
-        title: "Код за възстановяване"
+        title: "Код за нулиране"
 
         function saveCode() {
             const error = win.accountSession.setRecoveryCode(recoverySettingsPassword.text, chosenRecoveryCode.text)
@@ -951,7 +947,7 @@ ApplicationWindow {
                 return
             }
             close()
-            win.showStatus("Кодът за възстановяване е запазен.")
+            win.showStatus("Кодът за нулиране е запазен.")
         }
 
         onOpened: recoverySettingsPassword.forceActiveFocus()
@@ -963,11 +959,6 @@ ApplicationWindow {
 
         contentItem: ColumnLayout {
             spacing: 10
-            LedgerText {
-                Layout.fillWidth: true
-                wrapMode: Text.WordWrap
-                text: "Избери девет цифри от 1 до 9 за код при забравена парола."
-            }
             TextField {
                 id: recoverySettingsPassword
                 objectName: "recoverySettingsPassword"
@@ -982,11 +973,11 @@ ApplicationWindow {
                 id: chosenRecoveryCode
                 objectName: "chosenRecoveryCode"
                 Layout.fillWidth: true
-                placeholderText: "Код за възстановяване"
+                placeholderText: "Четирицифрен код за нулиране"
                 Accessible.name: placeholderText
                 echoMode: TextInput.PasswordEchoOnEdit
                 inputMethodHints: Qt.ImhDigitsOnly
-                maximumLength: 9
+                maximumLength: 4
                 onAccepted: recoverySettings.saveCode()
             }
             LedgerText {
@@ -998,7 +989,7 @@ ApplicationWindow {
             }
             RowLayout {
                 Layout.alignment: Qt.AlignRight
-                LedgerButton { text: "По-късно"; onClicked: recoverySettings.close() }
+                LedgerButton { text: "Отказ"; onClicked: recoverySettings.close() }
                 LedgerButton {
                     objectName: "saveRecoveryCode"
                     text: "Запази кода"

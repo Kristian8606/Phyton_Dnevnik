@@ -49,41 +49,41 @@ class AccountTests(unittest.TestCase):
         self.assertNotEqual(hashes[0][1], hashes[1][1])
         self.assertNotIn(b"sample-password", self.path.read_bytes())
 
-    def test_recovery_keeps_the_code_until_the_administrator_chooses_a_new_one(self):
+    def test_recovery_reuses_the_configured_four_digit_code(self):
         self.accounts.register("Админ", "old-password", "0000")
         self.accounts.register("Служител", "staff-password", "0000", administrator_password="old-password")
         with self.assertRaises(AccountError):
-            self.accounts.set_recovery_code("Служител", "staff-password", "957321624")
-        with self.assertRaisesRegex(AccountError, "девет"):
+            self.accounts.set_recovery_code("Служител", "staff-password", "4826")
+        with self.assertRaisesRegex(AccountError, "четири"):
             self.accounts.set_recovery_code("Админ", "old-password", "957301624")
-        self.accounts.set_recovery_code("Админ", "old-password", "957321624")
-        self.assertNotIn(b"957321624", self.path.read_bytes())
+        self.accounts.set_recovery_code("Админ", "old-password", "4826")
+        self.assertNotIn(b"4826", self.path.read_bytes())
 
         reopened = LocalAccounts(self.path)
-        self.assertTrue(reopened.has_numeric_recovery_code())
         with self.assertRaises(AccountError):
             reopened.reset_administrator("123456789", "Нов", "new-password")
         with self.assertRaisesRegex(AccountError, "вече"):
-            reopened.reset_administrator("957321624", "Служител", "new-password", "849627531")
+            reopened.reset_administrator("4826", "Служител", "new-password")
         self.assertTrue(reopened.authenticate("Админ", "old-password", administrator_only=True))
 
-        reopened.reset_administrator("957321624", "Нов", "new-password")
+        reopened.reset_administrator("4826", "Нов", "new-password")
         self.assertFalse(reopened.authenticate("Админ", "old-password"))
         self.assertTrue(reopened.authenticate("Нов", "new-password", administrator_only=True))
         self.assertTrue(reopened.authenticate("Служител", "staff-password"))
         self.assertFalse(reopened.is_administrator("Служител"))
 
-        reopened.reset_administrator("957321624", "НОВ", "different-password", "849627531")
+        reopened.reset_administrator("4826", "НОВ", "different-password")
         self.assertTrue(reopened.authenticate("Нов", "different-password", administrator_only=True))
+        reopened.set_recovery_code("Нов", "different-password", "6134")
         with self.assertRaises(AccountError):
-            reopened.reset_administrator("957321624", "Трети", "third-password")
-        reopened.reset_administrator("849627531", "Трети", "third-password")
+            reopened.reset_administrator("4826", "Трети", "third-password")
+        reopened.reset_administrator("6134", "Трети", "third-password")
         self.assertTrue(reopened.is_administrator("Трети"))
 
     def test_recovery_accepts_a_legacy_code_and_pauses_after_repeated_failures(self):
         self.accounts.register("Админ", "old-password", "0000")
         with self.assertRaisesRegex(AccountError, "създаден"):
-            self.accounts.reset_administrator("957321624", "Админ", "new-password")
+            self.accounts.reset_administrator("4826", "Админ", "new-password")
         salt = bytes(16)
         legacy_code = "D9345463F486AD2CE335B5782A65ACC0"
         code_hash = pbkdf2_hmac("sha256", legacy_code.encode(), salt, 600_000)
@@ -99,16 +99,14 @@ class AccountTests(unittest.TestCase):
             db.execute("INSERT INTO administrator_recovery VALUES (1, ?, ?)", (salt, code_hash))
 
         accounts = LocalAccounts(self.path)
-        self.assertFalse(accounts.has_numeric_recovery_code())
         with patch("cash_ledger.accounts.time", return_value=100):
             for _ in range(5):
                 with self.assertRaisesRegex(AccountError, "грешен"):
-                    accounts.reset_administrator("957321624", "Нов", "new-password")
+                    accounts.reset_administrator("4826", "Нов", "new-password")
             with self.assertRaisesRegex(AccountError, "секунди"):
                 LocalAccounts(self.path).reset_administrator(legacy_code, "Нов", "new-password")
         with patch("cash_ledger.accounts.time", return_value=161):
-            accounts.reset_administrator(legacy_code.lower(), "Нов", "new-password", "849627531")
-        self.assertTrue(accounts.has_numeric_recovery_code())
+            accounts.reset_administrator(legacy_code.lower(), "Нов", "new-password")
         self.assertTrue(accounts.is_administrator("Нов"))
 
     def _remove_role_table_to_simulate_the_previous_version(self):
