@@ -90,5 +90,5 @@ begin
   except
     Log('Pre-update archive failed: ' + GetExceptionMessage);
   end;
-  Result := 'Не можа да се създаде архив „Преди обновяване.sqlite3“. Обновяването е спряно.';
+  Result := 'Не можа да се създаде архив „Автоматичен архив.sqlite3“. Обновяването е спряно.';
 end;

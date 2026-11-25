@@ -47,7 +47,7 @@ jobs:
           $targetDir = Join-Path $env:RUNNER_TEMP 'ledger-install-check'
           $sqliteFile = Join-Path $env:LOCALAPPDATA 'Dnevnik\dnevnik.sqlite3'
           $archiveDir = Join-Path $targetDir 'Архиви'
-          $backupFile = Join-Path $archiveDir 'Преди обновяване.sqlite3'
+          $backupFile = Join-Path $archiveDir 'Автоматичен архив.sqlite3'
           $installArgs = @(
             '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', ('/DIR="' + $targetDir + '"')
           )

@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from cash_ledger.ledger import Ledger
-from cash_ledger.snapshots import UPDATE_ARCHIVE_NAME, backup_before_update
+from cash_ledger.snapshots import AUTOMATIC_ARCHIVE_NAME, backup_before_update
 
 
 class UpdateArchiveTests(unittest.TestCase):
@@ -18,7 +18,7 @@ class UpdateArchiveTests(unittest.TestCase):
 
     def test_no_database_leaves_the_existing_archive_alone(self):
         self.archives.mkdir(parents=True)
-        existing = self.archives / UPDATE_ARCHIVE_NAME
+        existing = self.archives / AUTOMATIC_ARCHIVE_NAME
         existing.write_bytes(b"previous archive")
         self.assertIsNone(backup_before_update(self.data, self.archives))
         self.assertEqual(existing.read_bytes(), b"previous archive")
@@ -31,7 +31,7 @@ class UpdateArchiveTests(unittest.TestCase):
             writer.execute("PRAGMA wal_autocheckpoint = 0")
             ledger.save(day, {"income": "125"})
             backup = backup_before_update(self.data, self.archives)
-            self.assertEqual(backup, self.archives / UPDATE_ARCHIVE_NAME)
+            self.assertEqual(backup, self.archives / AUTOMATIC_ARCHIVE_NAME)
             self.assertEqual(Ledger(backup).day(day).summary["cash"], 12500)
             with writer:
                 writer.execute(

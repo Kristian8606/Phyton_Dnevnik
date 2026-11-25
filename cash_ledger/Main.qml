@@ -128,6 +128,12 @@ ApplicationWindow {
         statusMessage = result.message
         statusError = !result.ok || Boolean(result.warning)
     }
+    function chooseRestoreArchive() {
+        const folder = win.controller.archiveFolder()
+        if (folder.toString())
+            restorePicker.currentFolder = folder
+        restorePicker.open()
+    }
     function openOperation(block, operationId, field) {
         const record = controller.openEdit(block, operationId)
         if (!record.ok) {
@@ -364,9 +370,15 @@ ApplicationWindow {
                         }
                         MenuItem {
                             objectName: "restoreArchiveMenuItem"
-                            enabled: !win.sessionEnabled || (win.controller && win.controller.isAdministrator)
+                            enabled: !win.sessionEnabled || (win.controller && win.controller.canAuthorizePeriod)
                             text: "Възстанови от архив…"
-                            onTriggered: restorePicker.open()
+                            onTriggered: {
+                                const automatic = win.controller.automaticArchive()
+                                if (automatic.toString())
+                                    restoreConfirm.openFor(automatic)
+                                else
+                                    win.chooseRestoreArchive()
+                            }
                         }
                         MenuItem {
                             objectName: "openArchiveFolderMenuItem"
@@ -1213,37 +1225,80 @@ ApplicationWindow {
         id: restorePicker
         title: "Избери архив на дневника"
         nameFilters: ["SQLite (*.sqlite3 *.sqlite)", "Всички файлове (*)"]
-        onAccepted: {
-            restoreConfirm.archive = selectedFile
-            restoreConfirm.open()
-        }
+        onAccepted: restoreConfirm.openFor(selectedFile)
     }
     Dialog {
         id: restoreConfirm
         anchors.centerIn: Overlay.overlay
         modal: true
         title: "Възстановяване от архив"
-        width: 390
+        width: 430
         property url archive
+
+        function openFor(file) {
+            archive = file
+            open()
+        }
+
+        function confirmRestore() {
+            const result = win.controller.restoreArchive(archive, restoreUsername.text, restorePassword.text)
+            if (!result.ok) {
+                restoreError.text = result.message
+                return
+            }
+            close()
+            win.showResult(result)
+            if (win.showingRevisions) {
+                win.revisionReport = win.controller.revisionReport()
+                win.revisionFeedback = result.message
+            } else {
+                navigationTabs.setCurrentIndex(0)
+            }
+        }
+
         onOpened: {
             restoreError.text = ""
             if (win.sessionEnabled)
-                restorePassword.forceActiveFocus()
+                restoreUsername.forceActiveFocus()
         }
-        onClosed: restorePassword.clear()
+        onClosed: {
+            restoreUsername.clear()
+            restorePassword.clear()
+        }
         contentItem: ColumnLayout {
             spacing: 10
+            LedgerText {
+                objectName: "restoreArchiveName"
+                Layout.fillWidth: true
+                text: decodeURIComponent(restoreConfirm.archive.toString().split("/").pop() || "")
+                font.weight: Font.DemiBold
+                wrapMode: Text.WrapAnywhere
+            }
             LedgerText {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 text: "Архивът ще замени операциите и историята на ревизиите. Преди възстановяването ще се запази копие на текущата база."
             }
             TextField {
+                id: restoreUsername
+                objectName: "restoreAdministratorUsername"
+                visible: win.sessionEnabled
+                Layout.fillWidth: true
+                placeholderText: "Име на администратора"
+                Accessible.name: placeholderText
+                maximumLength: 64
+                onAccepted: restorePassword.forceActiveFocus()
+            }
+            TextField {
                 id: restorePassword
+                objectName: "restoreAdministratorPassword"
                 visible: win.sessionEnabled
                 Layout.fillWidth: true
                 placeholderText: "Парола на администратора"
+                Accessible.name: placeholderText
                 echoMode: TextInput.Password
+                maximumLength: 512
+                onAccepted: restoreConfirm.confirmRestore()
             }
             LedgerText {
                 id: restoreError
@@ -1254,24 +1309,21 @@ ApplicationWindow {
             }
             RowLayout {
                 Layout.fillWidth: true
+                LedgerButton {
+                    text: "Избери друг файл…"
+                    quiet: true
+                    onClicked: {
+                        restoreConfirm.close()
+                        win.chooseRestoreArchive()
+                    }
+                }
                 Item { Layout.fillWidth: true }
                 LedgerButton { text: "Отказ"; onClicked: restoreConfirm.close() }
                 LedgerButton {
+                    objectName: "confirmRestoreArchive"
                     text: "Възстанови"
                     primary: true
-                    onClicked: {
-                        const result = win.controller.restoreArchive(restoreConfirm.archive, restorePassword.text)
-                        if (!result.ok) {
-                            restoreError.text = result.message
-                            return
-                        }
-                        restoreConfirm.close()
-                        win.showResult(result)
-                        if (win.showingRevisions) {
-                            win.revisionReport = win.controller.revisionReport()
-                            win.revisionFeedback = result.message
-                        }
-                    }
+                    onClicked: restoreConfirm.confirmRestore()
                 }
             }
         }

@@ -2,7 +2,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -17,6 +17,7 @@ from PySide6.QtTest import QTest
 from cash_ledger.desktop import make_window
 from cash_ledger.demo import prepare_demo
 from cash_ledger.ledger import Ledger
+from cash_ledger.snapshots import AUTOMATIC_ARCHIVE_NAME, backup_before_update
 from cash_ledger.table_print import _print_table, _printer
 
 
@@ -179,7 +180,8 @@ class DesktopTests(unittest.TestCase):
         app = QGuiApplication.instance() or QGuiApplication([])
         with TemporaryDirectory() as temporary:
             directory = Path(temporary)
-            database = directory / "dnevnik.sqlite3"
+            data = directory / "Local"
+            database = data / "Dnevnik" / "dnevnik.sqlite3"
             archives = directory / "Архиви"
             engine, controller = make_window(database, archive_directory=archives)
             try:
@@ -196,34 +198,39 @@ class DesktopTests(unittest.TestCase):
                     self.assertNotIn(label, labels)
                 point = button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
                 self.assertGreater(point.y(), field.mapToScene(QPointF(0, field.height())).y())
-                copies = archives / "Операции"
-                with patch("cash_ledger.desktop.datetime", create=True) as clock:
-                    clock.now.return_value = datetime(2026, 1, 15, 12, 30, 45, 123456)
-                    field.setProperty("text", "25")
-                    QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
-                                     point.toPoint())
-                    self.assertEqual(Ledger(database).day(date.today()).summary["cash"], 2500)
-                    self.assertEqual(controller.summary["incoming"], "+25,00 €")
-                    first = list(copies.glob("*.sqlite3"))
-                    self.assertEqual(len(first), 1)
-                    self.assertIn("2026-01-15_12-30-45", first[0].name)
-                    self.assertEqual(Ledger(first[0]).day(date.today()).summary["cash"], 2500)
-                    operation_id = Ledger(database).day(date.today()).operation_ids[0]["cash_movements"]
-                    self.assertTrue(controller.openEdit("cash_movements", str(operation_id))["ok"])
-                    self.assertTrue(controller.saveEdit({"income": "35"})["ok"])
-                all_copies = set(copies.iterdir())
-                self.assertEqual(len(all_copies), 2)
-                second, = all_copies - set(first)
-                self.assertEqual(Ledger(first[0]).day(date.today()).summary["cash"], 2500)
-                self.assertEqual(Ledger(second).day(date.today()).summary["cash"], 3500)
+                field.setProperty("text", "25")
+                QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                                 point.toPoint())
+                backup = archives / AUTOMATIC_ARCHIVE_NAME
+                self.assertTrue(backup.is_file())
+                self.assertEqual(Ledger(backup).day(date.today()).summary["cash"], 2500)
+                ledger = Ledger(database)
+                operation_id = ledger.day(date.today()).operation_ids[0]["cash_movements"]
+                self.assertTrue(controller.openEdit("cash_movements", str(operation_id))["ok"])
+                self.assertTrue(controller.saveEdit({"income": "35"})["ok"])
+                self.assertEqual(Ledger(backup).day(date.today()).summary["cash"], 3500)
+                ledger.save(date.today(), {"income": "10"})
+                self.assertEqual(backup_before_update(data, archives), backup)
+                self.assertEqual(Ledger(backup).day(date.today()).summary["cash"], 4500)
+                self.assertEqual(list(archives.iterdir()), [backup])
 
                 with patch("cash_ledger.desktop.replace_archive", side_effect=OSError):
                     result = controller.saveDraft({"income": "10"})
                 self.assertTrue(result["ok"])
                 self.assertTrue(result["warning"])
-                self.assertEqual(Ledger(database).day(date.today()).summary["cash"], 4500)
-                self.assertEqual(set(copies.iterdir()), all_copies)
-                self.assertEqual(Ledger(second).day(date.today()).summary["cash"], 3500)
+                self.assertEqual(ledger.day(date.today()).summary["cash"], 5500)
+                self.assertEqual(Ledger(backup).day(date.today()).summary["cash"], 4500)
+                self.assertEqual(list(archives.iterdir()), [backup])
+
+                window.findChild(QObject, "restoreArchiveMenuItem").triggered.emit()
+                app.processEvents()
+                self.assertEqual(visual_item(root, "restoreArchiveName").property("text"), backup.name)
+                confirm = visual_item(root, "confirmRestoreArchive")
+                position = confirm.mapToScene(QPointF(confirm.width() / 2, confirm.height() / 2))
+                QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                                 position.toPoint())
+                self.assertEqual(ledger.day(date.today()).summary["cash"], 4500)
+
             finally:
                 if engine.rootObjects():
                     engine.rootObjects()[0].close()

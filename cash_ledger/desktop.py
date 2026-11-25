@@ -1,10 +1,10 @@
 """Qt bindings for the ledger screen."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 import sqlite3
 
-from PySide6.QtCore import QByteArray, Property, QAbstractListModel, QLocale, QLockFile, QModelIndex, QObject, Qt, QUrl, Signal, Slot
+from PySide6.QtCore import QByteArray, Property, QAbstractListModel, QLocale, QModelIndex, QObject, Qt, QUrl, Signal, Slot
 from PySide6.QtGui import QFont, QFontMetrics
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -12,7 +12,7 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from .ledger import BLOCKS, Ledger, MONETARY, SEARCH_LIMIT, ValidationError, WEIGHTS, weight_error
 
 from .preferences import Preferences
-from .snapshots import replace_archive
+from .snapshots import AUTOMATIC_ARCHIVE_NAME, replace_archive
 from .table_print import PrintColumn, print_table
 from .updates import WindowsUpdates
 
@@ -103,14 +103,12 @@ class LedgerWindow(QObject):
     changed = Signal()
 
     def __init__(self, database: Path, parent=None, *, session_enabled=False,
-                 is_administrator=False, verify_admin=None, archive_directory=None,
-                 active_username=""):
+                 is_administrator=False, verify_admin=None, archive_directory=None):
         super().__init__(parent)
         self._ledger = Ledger(database, archive_directory=archive_directory)
         self._session_enabled = session_enabled
         self._is_administrator = is_administrator
         self._verify_admin = verify_admin
-        self._active_username = active_username
         self._day = date.today()
         self._rows = DailyRows(self)
         self._summary = {}
@@ -364,24 +362,23 @@ class LedgerWindow(QObject):
     def draftWeightError(self, fields):
         return weight_error(fields)
 
-    def _archive_saved_operations(self) -> str:
+    def _automatic_archive(self) -> Path:
         database = self._ledger.path
+        filename = (AUTOMATIC_ARCHIVE_NAME if database.name == "dnevnik.sqlite3"
+                    else f"{database.stem} – автоматичен архив.sqlite3")
+        return self._ledger.archive_directory() / filename
+
+    @Slot(result=QUrl)
+    def automaticArchive(self):
         try:
-            directory = self._ledger.archive_directory() / "Операции"
-            directory.mkdir(exist_ok=True)
-            lock = QLockFile(str(directory / ".archive.lock"))
-            if not lock.tryLock(1500):
-                raise TimeoutError("Автоматичният архив е зает.")
-            try:
-                prefix = f"{database.stem}-{datetime.now():%Y-%m-%d_%H-%M-%S-%f}"
-                target = directory / f"{prefix}.sqlite3"
-                sequence = 1
-                while target.exists():
-                    sequence += 1
-                    target = directory / f"{prefix}-{sequence}.sqlite3"
-                replace_archive(database, target)
-            finally:
-                lock.unlock()
+            archive = self._automatic_archive()
+            return QUrl.fromLocalFile(str(archive)) if archive.is_file() else QUrl()
+        except OSError:
+            return QUrl()
+
+    def _archive_saved_operations(self) -> str:
+        try:
+            replace_archive(self._ledger.path, self._automatic_archive())
         except (OSError, sqlite3.Error):
             return "Не можа да се създаде копие на базата след тази операция."
         return ""
@@ -461,15 +458,15 @@ class LedgerWindow(QObject):
             return {"ok": False, "message": "Архивът не е създаден. " + str(error)}
         return {"ok": True, "message": "Архивът е създаден."}
 
-    @Slot(QUrl, str, result="QVariantMap")
-    def restoreArchive(self, url, administrator_password=""):
-        if self._session_enabled and (not self._is_administrator or self._verify_admin is None):
-            return {"ok": False, "message": "Само администраторът може да възстанови архив."}
+    @Slot(QUrl, str, str, result="QVariantMap")
+    def restoreArchive(self, url, administrator_username, administrator_password):
+        if self._session_enabled and self._verify_admin is None:
+            return {"ok": False, "message": "За възстановяване е нужно потвърждение от администратор."}
         if not url.isLocalFile():
             return {"ok": False, "message": "Избери локален архив."}
         try:
-            if self._session_enabled and not self._verify_admin(self._active_username, administrator_password):
-                return {"ok": False, "message": "Грешна парола на администратора."}
+            if self._session_enabled and not self._verify_admin(administrator_username, administrator_password):
+                return {"ok": False, "message": "Въведи правилните име и парола на администратора."}
             safety = self._ledger.restore(Path(url.toLocalFile()))
         except ValidationError as error:
             return {"ok": False, "message": str(error)}
@@ -495,7 +492,7 @@ def make_window(database: Path, *, demo: bool = False, preferences: Preferences 
     controller = LedgerWindow(
         database, engine, session_enabled=session_enabled,
         is_administrator=is_administrator, verify_admin=verify_admin,
-        archive_directory=archive_directory, active_username=active_username,
+        archive_directory=archive_directory,
     )
     preferences = preferences or Preferences(database.parent / "settings.ini", engine)
     updates = WindowsUpdates(database.parent / "updates", engine)
