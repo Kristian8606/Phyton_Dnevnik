@@ -53,10 +53,10 @@ class AccountTests(unittest.TestCase):
         self.accounts.register("Админ", "old-password", "0000")
         self.accounts.register("Служител", "staff-password", "0000", administrator_password="old-password")
         with self.assertRaises(AccountError):
-            self.accounts.set_recovery_code("Служител", "staff-password", "4826")
+            self.accounts.configure_recovery_code("Служител", "staff-password", "4826")
         with self.assertRaisesRegex(AccountError, "четири"):
-            self.accounts.set_recovery_code("Админ", "old-password", "957301624")
-        self.accounts.set_recovery_code("Админ", "old-password", "4826")
+            self.accounts.configure_recovery_code("Админ", "old-password", "957301624")
+        self.accounts.configure_recovery_code("Админ", "old-password", "4826")
         self.assertNotIn(b"4826", self.path.read_bytes())
 
         reopened = LocalAccounts(self.path)
@@ -74,10 +74,11 @@ class AccountTests(unittest.TestCase):
 
         reopened.reset_administrator("4826", "НОВ", "different-password")
         self.assertTrue(reopened.authenticate("Нов", "different-password", administrator_only=True))
-        reopened.set_recovery_code("Нов", "different-password", "6134")
+        with self.assertRaisesRegex(AccountError, "Вече има"):
+            reopened.configure_recovery_code("Нов", "different-password", "6134")
         with self.assertRaises(AccountError):
-            reopened.reset_administrator("4826", "Трети", "third-password")
-        reopened.reset_administrator("6134", "Трети", "third-password")
+            reopened.reset_administrator("6134", "Трети", "third-password")
+        reopened.reset_administrator("4826", "Трети", "third-password")
         self.assertTrue(reopened.is_administrator("Трети"))
 
     def test_recovery_accepts_a_legacy_code_and_pauses_after_repeated_failures(self):

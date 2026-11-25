@@ -26,7 +26,7 @@ class DesktopSession(QObject):
         self._show_windows = show_windows
         self._archive_directory = archive_directory
         self._adding_user = False
-        self._administrator_username = ""
+        self._administrator = False
         self._work_engine = None
         self._access_engine = QQmlApplicationEngine(self)
 
@@ -92,47 +92,44 @@ class DesktopSession(QObject):
                 session_enabled=True, visible=self._show_windows, active_username=username.strip(),
                 archive_directory=self._archive_directory,
                 is_administrator=administrator, verify_admin=verify_administrator,
-                account_session=self,
             )
         except (OSError, sqlite3.Error) as exc:
             return f"Дневникът не можа да се отвори. {exc}"
         if not engine.rootObjects():
             return "Дневникът не можа да се отвори."
         self._work_engine = engine
-        self._administrator_username = username.strip() if administrator else ""
+        self._administrator = administrator
         window = engine.rootObjects()[0]
         window.signOutRequested.connect(self.sign_out)
         window.registrationRequested.connect(self.add_user)
         self._access_engine.rootObjects()[0].hide()
         return ""
 
-    @Slot(str, str, str, result=str)
-    def resetAdministrator(self, code, username, password):
+    @Slot(result=bool)
+    def needsRecoveryCode(self):
+        try:
+            return not self._accounts.has_recovery_code()
+        except (OSError, sqlite3.Error):
+            return False
+
+    @Slot(str, str, str, bool, result=str)
+    def submitAdministratorRecovery(self, code, username, password, setup_code):
         if not self.canResetAdministrator:
             return "Отвори „Нулирай администратора“ от екрана за вход."
         try:
-            self._accounts.reset_administrator(code, username, password)
+            if setup_code:
+                self._accounts.configure_recovery_code(username, password, code)
+            else:
+                self._accounts.reset_administrator(code, username, password)
         except AccountError as exc:
             return str(exc)
         except (OSError, sqlite3.Error):
-            return "Администраторският профил не можа да се обнови."
-        return ""
-
-    @Slot(str, str, result=str)
-    def setRecoveryCode(self, password, code):
-        if not self._administrator_username:
-            return "Само администраторът може да създаде нов код."
-        try:
-            self._accounts.set_recovery_code(self._administrator_username, password, code)
-        except AccountError as exc:
-            return str(exc)
-        except (OSError, sqlite3.Error):
-            return "Кодът за възстановяване не можа да се създаде."
+            return "Промяната не можа да се запише."
         return ""
 
     @Slot()
     def add_user(self):
-        if self._adding_user or (self._work_engine is not None and not self._administrator_username):
+        if self._adding_user or (self._work_engine is not None and not self._administrator):
             return
         self._adding_user = True
         self.formChanged.emit()
@@ -156,7 +153,7 @@ class DesktopSession(QObject):
             return
         self._access_engine.rootObjects()[0].show()
         engine, self._work_engine = self._work_engine, None
-        self._administrator_username = ""
+        self._administrator = False
         self.formChanged.emit()
         engine.rootObjects()[0].close()
         engine.deleteLater()

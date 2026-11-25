@@ -431,8 +431,7 @@ class LedgerWindow(QObject):
 def make_window(database: Path, *, demo: bool = False, preferences: Preferences | None = None,
                 session_enabled: bool = False, visible: bool = True,
                 is_administrator: bool = False, verify_admin=None,
-                active_username: str = "", archive_directory: Path | None = None,
-                account_session: QObject | None = None):
+                active_username: str = "", archive_directory: Path | None = None):
     if QQuickStyle.name() != "Basic":
         QQuickStyle.setStyle("Basic")
     engine = QQmlApplicationEngine()
@@ -443,7 +442,7 @@ def make_window(database: Path, *, demo: bool = False, preferences: Preferences 
     )
     preferences = preferences or Preferences(database.parent / "settings.ini", engine)
     updates = WindowsUpdates(database.parent / "updates", engine)
-    properties = {
+    engine.setInitialProperties({
         "controller": controller,
         "preferences": preferences,
         "updates": updates,
@@ -451,9 +450,6 @@ def make_window(database: Path, *, demo: bool = False, preferences: Preferences 
         "sessionEnabled": session_enabled,
         "activeUsername": active_username,
         "visible": visible,
-    }
-    if account_session is not None:
-        properties["accountSession"] = account_session
-    engine.setInitialProperties(properties)
+    })
     engine.load(QUrl.fromLocalFile(str(Path(__file__).with_name("Main.qml"))))
     return engine, controller

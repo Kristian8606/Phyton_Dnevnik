@@ -91,7 +91,8 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(journal.findChild(QObject, "activeUserLabel").property("text"), "Втори")
             member = journal.property("controller")
             self.assertFalse(member.isAdministrator)
-            self.assertIn("Само администраторът", session.setRecoveryCode("test-secret", "0482"))
+            self.assertIn("екрана за вход", session.submitAdministratorRecovery(
+                "0482", "Втори", "different-pass", True))
             member.revisionReport()
             ledger = Ledger(database)
             for name, secret in (("Втори", "different-pass"), ("Втори", "test-secret"),
@@ -145,19 +146,23 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(session.submit("Админ", "forgotten-password", ""), "")
             journal = session._work_engine.rootObjects()[0]
             app.processEvents()
-            password_field = item(journal, "recoverySettingsPassword")
-            self.assertFalse(password_field.property("visible"))
-            item(journal, "recoveryCodeMenuItem").triggered.emit()
-            app.processEvents()
-            self.assertTrue(password_field.property("visible"))
-            password_field.setProperty("text", "forgotten-password")
-            item(journal, "chosenRecoveryCode").setProperty("text", "0482")
-            click(journal, "saveRecoveryCode")
-            self.assertFalse(password_field.property("visible"))
+            self.assertIsNone(journal.findChild(QObject, "recoveryCodeMenuItem"))
             session.sign_out()
             app.processEvents()
 
             click(gate, "resetAdministratorButton")
+            self.assertEqual(item(gate, "confirmAdministratorReset").property("text"), "Запази кода")
+            item(gate, "resetRecoveryCode").setProperty("text", "0482")
+            item(gate, "resetUsername").setProperty("text", "Служител")
+            item(gate, "resetPassword").setProperty("text", "employee-password")
+            click(gate, "confirmAdministratorReset")
+            self.assertIn("администратора", item(gate, "resetError").property("text"))
+            item(gate, "resetUsername").setProperty("text", "Админ")
+            item(gate, "resetPassword").setProperty("text", "forgotten-password")
+            click(gate, "confirmAdministratorReset")
+
+            click(gate, "resetAdministratorButton")
+            self.assertEqual(item(gate, "confirmAdministratorReset").property("text"), "Потвърди")
             item(gate, "resetRecoveryCode").setProperty("text", "0000")
             item(gate, "resetUsername").setProperty("text", "Нов админ")
             item(gate, "resetPassword").setProperty("text", "new-password")
@@ -171,7 +176,6 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(session.submit("Нов админ", "new-password", ""), "")
             journal = session._work_engine.rootObjects()[0]
             self.assertTrue(journal.property("controller").isAdministrator)
-            self.assertFalse(item(journal, "chosenRecoveryCode").property("visible"))
             self.assertEqual(ledger.day(date.today()).summary["cash"], 12500)
             self.assertTrue(accounts.authenticate("Служител", "employee-password"))
         finally:

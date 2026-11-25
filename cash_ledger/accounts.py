@@ -117,7 +117,11 @@ class LocalAccounts:
             if administrator is None:
                 db.execute("INSERT INTO administrator VALUES (1, ?)", (key,))
 
-    def set_recovery_code(self, username: str, password: str, code: str):
+    def has_recovery_code(self) -> bool:
+        with closing(sqlite3.connect(self._path)) as db:
+            return db.execute("SELECT 1 FROM administrator_recovery").fetchone() is not None
+
+    def configure_recovery_code(self, username: str, password: str, code: str):
         with closing(sqlite3.connect(self._path)) as db, db:
             db.execute("BEGIN IMMEDIATE")
             credentials = db.execute("""
@@ -126,6 +130,8 @@ class LocalAccounts:
             """, (_username_key(username),)).fetchone()
             if not _matches(credentials, password):
                 raise AccountError("Въведи правилната парола на администратора.")
+            if db.execute("SELECT 1 FROM administrator_recovery").fetchone():
+                raise AccountError("Вече има зададен код за нулиране. Отвори прозореца отново.")
             _store_recovery_code(db, code.strip())
 
     def reset_administrator(self, code: str, username: str, password: str):

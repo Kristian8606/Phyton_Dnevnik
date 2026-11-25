@@ -83,10 +83,12 @@ ApplicationWindow {
         anchors.centerIn: Overlay.overlay
         width: Math.min(440, access.width - 32)
         modal: true
-        title: "Нулирай администратора"
+        property bool setupCode: false
+        title: setupCode ? "Задай код за нулиране" : "Нулирай администратора"
 
-        function submitReset() {
-            const error = access.session.resetAdministrator(recoveryCode.text, newUsername.text, newPassword.text)
+        function submitRecovery() {
+            const error = access.session.submitAdministratorRecovery(
+                recoveryCode.text, recoveryUsername.text, recoveryPassword.text, setupCode)
             if (error) {
                 resetError.text = error
                 return
@@ -94,14 +96,16 @@ ApplicationWindow {
             close()
             access.session.cancelRegistration()
             access.clearForm()
-            loginHint.text = "Профилът е обновен. Влез с новото име и парола."
+            loginHint.text = setupCode ? "Кодът за нулиране е запазен."
+                                       : "Профилът е обновен. Влез с новото име и парола."
         }
 
-        onOpened: recoveryCode.forceActiveFocus()
+        onAboutToShow: setupCode = access.session.needsRecoveryCode()
+        onOpened: (setupCode ? recoveryUsername : recoveryCode).forceActiveFocus()
         onClosed: {
             recoveryCode.clear()
-            newUsername.clear()
-            newPassword.clear()
+            recoveryUsername.clear()
+            recoveryPassword.clear()
             resetError.text = ""
         }
 
@@ -110,30 +114,33 @@ ApplicationWindow {
             Label {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: "Въведи кода за нулиране и данните за администратора."
+                text: resetDialog.setupCode
+                      ? "За да зададеш код за първи път, въведи името и паролата на текущия администратор."
+                      : "Въведи кода за нулиране и данните за администратора."
             }
             AccountField {
                 id: recoveryCode
                 objectName: "resetRecoveryCode"
-                placeholderText: "Код за нулиране"
-                maximumLength: 128
+                placeholderText: resetDialog.setupCode ? "Четирицифрен код за нулиране" : "Код за нулиране"
+                maximumLength: resetDialog.setupCode ? 4 : 128
                 echoMode: TextInput.Password
-                onAccepted: newUsername.forceActiveFocus()
+                onAccepted: resetDialog.setupCode ? resetDialog.submitRecovery() : recoveryUsername.forceActiveFocus()
             }
             AccountField {
-                id: newUsername
+                id: recoveryUsername
                 objectName: "resetUsername"
-                placeholderText: "Ново потребителско име"
+                placeholderText: resetDialog.setupCode ? "Име на текущия администратор" : "Ново потребителско име"
                 maximumLength: 64
-                onAccepted: newPassword.forceActiveFocus()
+                onAccepted: recoveryPassword.forceActiveFocus()
             }
             AccountField {
-                id: newPassword
+                id: recoveryPassword
                 objectName: "resetPassword"
-                placeholderText: "Парола за новия администратор"
+                placeholderText: resetDialog.setupCode ? "Парола на текущия администратор"
+                                                       : "Парола за новия администратор"
                 maximumLength: 512
                 echoMode: TextInput.Password
-                onAccepted: resetDialog.submitReset()
+                onAccepted: resetDialog.setupCode ? recoveryCode.forceActiveFocus() : resetDialog.submitRecovery()
             }
             Label {
                 id: resetError
@@ -148,8 +155,8 @@ ApplicationWindow {
                 Button { text: "Отказ"; onClicked: resetDialog.close() }
                 Button {
                     objectName: "confirmAdministratorReset"
-                    text: "Потвърди"
-                    onClicked: resetDialog.submitReset()
+                    text: resetDialog.setupCode ? "Запази кода" : "Потвърди"
+                    onClicked: resetDialog.submitRecovery()
                 }
             }
         }

@@ -12,7 +12,6 @@ ApplicationWindow {
     property bool testMode: false
     property bool sessionEnabled: false
     property string activeUsername: ""
-    property QtObject accountSession: null
     property bool showingRevisions: false
     property var revisionReport: ({})
     property string revisionFeedback: ""
@@ -362,12 +361,6 @@ ApplicationWindow {
                         visible: win.sessionEnabled
                         text: "Нов служител…"
                         onTriggered: win.registrationRequested()
-                    }
-                    MenuItem {
-                        objectName: "recoveryCodeMenuItem"
-                        visible: win.accountSession && win.controller.isAdministrator
-                        text: "Код за нулиране…"
-                        onTriggered: recoverySettings.open()
                     }
                     MenuItem {
                         visible: win.sessionEnabled
@@ -930,73 +923,6 @@ ApplicationWindow {
             win.revisionReport = win.controller.revisionReport()
             if (win.revisionReport.ok && win.revisionReport.operationCount > 0)
                 closeRevisionDialog.open()
-        }
-    }
-
-    Dialog {
-        id: recoverySettings
-        anchors.centerIn: Overlay.overlay
-        width: 410
-        modal: true
-        title: "Код за нулиране"
-
-        function saveCode() {
-            const error = win.accountSession.setRecoveryCode(recoverySettingsPassword.text, chosenRecoveryCode.text)
-            if (error) {
-                recoverySettingsError.text = error
-                return
-            }
-            close()
-            win.showStatus("Кодът за нулиране е запазен.")
-        }
-
-        onOpened: recoverySettingsPassword.forceActiveFocus()
-        onClosed: {
-            recoverySettingsPassword.clear()
-            chosenRecoveryCode.clear()
-            recoverySettingsError.text = ""
-        }
-
-        contentItem: ColumnLayout {
-            spacing: 10
-            TextField {
-                id: recoverySettingsPassword
-                objectName: "recoverySettingsPassword"
-                Layout.fillWidth: true
-                placeholderText: "Парола на администратора"
-                Accessible.name: placeholderText
-                echoMode: TextInput.Password
-                maximumLength: 512
-                onAccepted: chosenRecoveryCode.forceActiveFocus()
-            }
-            TextField {
-                id: chosenRecoveryCode
-                objectName: "chosenRecoveryCode"
-                Layout.fillWidth: true
-                placeholderText: "Четирицифрен код за нулиране"
-                Accessible.name: placeholderText
-                echoMode: TextInput.PasswordEchoOnEdit
-                inputMethodHints: Qt.ImhDigitsOnly
-                maximumLength: 4
-                onAccepted: recoverySettings.saveCode()
-            }
-            LedgerText {
-                id: recoverySettingsError
-                Layout.fillWidth: true
-                visible: text.length > 0
-                wrapMode: Text.WordWrap
-                color: win.warningColor
-            }
-            RowLayout {
-                Layout.alignment: Qt.AlignRight
-                LedgerButton { text: "Отказ"; onClicked: recoverySettings.close() }
-                LedgerButton {
-                    objectName: "saveRecoveryCode"
-                    text: "Запази кода"
-                    primary: true
-                    onClicked: recoverySettings.saveCode()
-                }
-            }
         }
     }
 
