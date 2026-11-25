@@ -16,7 +16,6 @@ ApplicationWindow {
 
     readonly property bool registering: session !== null && session.registering
     readonly property bool addingUser: session !== null && session.addingUser
-    readonly property bool needsAdministrator: session !== null && session.administratorPasswordRequired
     readonly property string theme: preferences ? preferences.theme : "system"
     readonly property bool dark: theme === "dark"
                                  || (theme === "system"
@@ -37,7 +36,7 @@ ApplicationWindow {
     palette.highlightedText: accentText
 
     function submit() {
-        const problem = session.submit(username.text, password.text, verification.text, administratorPassword.text)
+        const problem = session.submit(username.text, password.text, verification.text)
         errorText.text = problem
         if (!problem)
             clearForm()
@@ -47,7 +46,6 @@ ApplicationWindow {
         username.clear()
         password.clear()
         verification.clear()
-        administratorPassword.clear()
         errorText.text = ""
         loginHint.text = ""
         username.forceActiveFocus()
@@ -129,7 +127,7 @@ ApplicationWindow {
             AccountField {
                 id: recoveryUsername
                 objectName: "resetUsername"
-                placeholderText: resetDialog.setupCode ? "Име на текущия администратор" : "Ново потребителско име"
+                placeholderText: resetDialog.setupCode ? "Име на текущия администратор" : "Име за вход"
                 maximumLength: 64
                 onAccepted: recoveryPassword.forceActiveFocus()
             }
@@ -185,7 +183,7 @@ ApplicationWindow {
             Label {
                 objectName: "accountFormTitle"
                 text: !access.registering ? "Вход"
-                      : access.needsAdministrator ? "Нов служител" : "Нов администратор"
+                      : access.addingUser ? "Юзър" : "Администратор"
                 color: access.ink
                 font.pixelSize: 25
                 font.weight: Font.DemiBold
@@ -194,7 +192,7 @@ ApplicationWindow {
             AccountField {
                 id: username
                 objectName: "loginUsername"
-                placeholderText: "Потребителско име"
+                placeholderText: "Име за вход"
                 maximumLength: 64
                 onAccepted: password.forceActiveFocus()
             }
@@ -202,7 +200,7 @@ ApplicationWindow {
                 id: password
                 objectName: "loginPassword"
                 placeholderText: !access.registering ? "Парола"
-                                 : access.needsAdministrator ? "Парола за служителя" : "Парола за администратора"
+                                 : access.addingUser ? "Парола за юзъра" : "Парола за администратора"
                 maximumLength: 512
                 echoMode: TextInput.Password
                 onAccepted: access.registering ? verification.forceActiveFocus() : access.submit()
@@ -214,15 +212,6 @@ ApplicationWindow {
                 visible: access.registering
                 maximumLength: 4
                 inputMethodHints: Qt.ImhDigitsOnly
-                echoMode: TextInput.Password
-                onAccepted: access.needsAdministrator ? administratorPassword.forceActiveFocus() : access.submit()
-            }
-            AccountField {
-                id: administratorPassword
-                objectName: "administratorPassword"
-                placeholderText: "Парола на текущия администратор"
-                visible: access.needsAdministrator
-                maximumLength: 512
                 echoMode: TextInput.Password
                 onAccepted: access.submit()
             }
@@ -245,7 +234,7 @@ ApplicationWindow {
                 id: submitButton
                 objectName: "accountSubmitButton"
                 text: !access.registering ? "Влез"
-                      : access.needsAdministrator ? "Добави служител" : "Създай администратор"
+                      : access.addingUser ? "Създай юзър" : "Създай администратор"
                 Layout.fillWidth: true
                 implicitHeight: 41
                 Layout.topMargin: 7
@@ -267,7 +256,7 @@ ApplicationWindow {
                 objectName: "registrationButton"
                 visible: !access.registering || access.addingUser
                 Layout.alignment: Qt.AlignHCenter
-                text: access.addingUser ? "Назад" : "Регистрация на служител"
+                text: access.addingUser ? "Назад" : "Регистрация на юзър"
                 flat: true
                 onClicked: {
                     if (access.addingUser)

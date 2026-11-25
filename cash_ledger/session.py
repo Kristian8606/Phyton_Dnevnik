@@ -50,27 +50,23 @@ class DesktopSession(QObject):
         return self._adding_user
 
     @Property(bool, notify=formChanged)
-    def administratorPasswordRequired(self):
-        return self.registering and self._has_users
-
-    @Property(bool, notify=formChanged)
     def canResetAdministrator(self):
         return self._has_users and self._work_engine is None
 
-    @Slot(str, str, str, str, result=str)
-    def submit(self, username, password, code, administrator_password=""):
+    @Slot(str, str, str, result=str)
+    def submit(self, username, password, code):
         if self._work_engine is not None:
             return ""
         try:
             if self.registering:
-                self._accounts.register(username, password, code, administrator_password=administrator_password)
+                self._accounts.register(username, password, code, as_administrator=not self._adding_user)
                 self._has_users = True
                 if self._adding_user:
                     self.cancelRegistration()
                     return ""
                 self.formChanged.emit()
             elif not self._accounts.authenticate(username, password):
-                return "Грешно потребителско име или парола."
+                return "Грешно име за вход или парола."
             administrator = self._accounts.is_administrator(username)
         except AccountError as exc:
             if not self._has_users:
@@ -78,7 +74,7 @@ class DesktopSession(QObject):
                 self.formChanged.emit()
             return str(exc)
         except (OSError, sqlite3.Error):
-            return "Потребителските профили са недостъпни."
+            return "Профилите са недостъпни."
 
         try:
             database = self._database_for_session()

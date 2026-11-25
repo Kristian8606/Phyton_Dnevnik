@@ -259,7 +259,7 @@ class LedgerWindow(QObject):
             return {"ok": False, "message": "Отвори отново прегледа на ревизията."}
         try:
             if not self._verify_admin(administrator_username, administrator_password):
-                return {"ok": False, "message": "Въведи правилните потребителско име и парола на администратора."}
+                return {"ok": False, "message": "Въведи правилните име и парола на администратора."}
             archive = self._ledger.close_revision(self._revision_preview)
         except ValidationError as error:
             self._revision_preview = None

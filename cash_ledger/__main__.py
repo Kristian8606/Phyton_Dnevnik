@@ -66,7 +66,7 @@ def main() -> int:
             data_directory, open_database, demo=args.demo, archive_directory=program_archive_directory(),
         )
     except (OSError, sqlite3.Error) as exc:
-        parser.exit(1, f"Потребителските профили са недостъпни. {exc}\n")
+        parser.exit(1, f"Профилите са недостъпни. {exc}\n")
     if not session.start():
         return 1
     return app.exec()

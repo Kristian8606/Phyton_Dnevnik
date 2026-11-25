@@ -33,11 +33,10 @@ class SessionTests(unittest.TestCase):
             self.assertIsNotNone(result, name)
             return result
 
-        def submit(username, password, verification="", administrator_password=""):
+        def submit(username, password, verification=""):
             field("loginUsername").setProperty("text", username)
             field("loginPassword").setProperty("text", password)
             field("registrationCode").setProperty("text", verification)
-            field("administratorPassword").setProperty("text", administrator_password)
             click("accountSubmitButton")
 
         def click(name):
@@ -49,9 +48,9 @@ class SessionTests(unittest.TestCase):
         try:
             app.processEvents()
             self.assertEqual(opens, [])
-            self.assertEqual(field("accountFormTitle").property("text"), "Нов администратор")
+            self.assertEqual(field("accountFormTitle").property("text"), "Администратор")
             self.assertEqual(field("loginPassword").property("placeholderText"), "Парола за администратора")
-            self.assertFalse(field("administratorPassword").property("visible"))
+            self.assertIsNone(gate.findChild(QObject, "administratorPassword"))
             submit("Касиер", "test-secret", "1234")
             self.assertEqual(opens, [])
             self.assertIn("Кодът", field("loginError").property("text"))
@@ -67,7 +66,7 @@ class SessionTests(unittest.TestCase):
             menu = journal.findChild(QObject, "settingsMenu")
             labels = [item.property("text") or "" for item in menu.findChildren(QObject)]
             self.assertIn("Изход от профила", labels)
-            self.assertFalse(any(label.startswith(("Нов служител", "Код за нулиране")) for label in labels))
+            self.assertFalse(any(label.startswith(("Нов юзър", "Код за нулиране")) for label in labels))
             session.add_user()
             self.assertFalse(session.addingUser)
 
@@ -75,17 +74,15 @@ class SessionTests(unittest.TestCase):
             app.processEvents()
             self.assertTrue(gate.isVisible())
             self.assertFalse(field("registrationCode").property("visible"))
-            self.assertEqual(field("registrationButton").property("text"), "Регистрация на служител")
+            self.assertEqual(field("registrationButton").property("text"), "Регистрация на юзър")
             click("registrationButton")
-            self.assertEqual(field("accountFormTitle").property("text"), "Нов служител")
-            self.assertEqual(field("loginPassword").property("placeholderText"), "Парола за служителя")
-            self.assertEqual(field("administratorPassword").property("placeholderText"),
-                             "Парола на текущия администратор")
-            self.assertTrue(field("administratorPassword").property("visible"))
-            submit("Втори", "different-pass", "0000", "wrong")
+            self.assertEqual(field("accountFormTitle").property("text"), "Юзър")
+            self.assertEqual(field("loginPassword").property("placeholderText"), "Парола за юзъра")
+            self.assertIsNone(gate.findChild(QObject, "administratorPassword"))
+            submit("Втори", "different-pass", "1234")
             self.assertEqual(opens, [database])
-            self.assertIn("администратора", field("loginError").property("text"))
-            submit("Втори", "different-pass", "0000", "test-secret")
+            self.assertIn("Кодът", field("loginError").property("text"))
+            submit("Втори", "different-pass", "0000")
             self.assertTrue(gate.isVisible())
             self.assertFalse(field("registrationCode").property("visible"))
             self.assertEqual(opens, [database])
@@ -129,8 +126,8 @@ class SessionTests(unittest.TestCase):
         ledger = Ledger(database)
         ledger.save(date.today(), {"income": "125"})
         accounts = LocalAccounts(directory / "access" / "accounts.sqlite3")
-        accounts.register("Админ", "forgotten-password", "0000")
-        accounts.register("Служител", "employee-password", "0000", administrator_password="forgotten-password")
+        accounts.register("Админ", "forgotten-password", "0000", as_administrator=True)
+        accounts.register("Юзър", "user-password", "0000")
 
         session = DesktopSession(directory, lambda: database)
         self.assertTrue(session.start())
@@ -159,8 +156,8 @@ class SessionTests(unittest.TestCase):
             click(gate, "resetAdministratorButton")
             self.assertEqual(item(gate, "confirmAdministratorReset").property("text"), "Запази кода")
             item(gate, "resetRecoveryCode").setProperty("text", "0482")
-            item(gate, "resetUsername").setProperty("text", "Служител")
-            item(gate, "resetPassword").setProperty("text", "employee-password")
+            item(gate, "resetUsername").setProperty("text", "Юзър")
+            item(gate, "resetPassword").setProperty("text", "user-password")
             click(gate, "confirmAdministratorReset")
             self.assertIn("администратора", item(gate, "resetError").property("text"))
             item(gate, "resetUsername").setProperty("text", "Админ")
@@ -183,7 +180,7 @@ class SessionTests(unittest.TestCase):
             journal = session._work_engine.rootObjects()[0]
             self.assertTrue(journal.property("controller").isAdministrator)
             self.assertEqual(ledger.day(date.today()).summary["cash"], 12500)
-            self.assertTrue(accounts.authenticate("Служител", "employee-password"))
+            self.assertTrue(accounts.authenticate("Юзър", "user-password"))
         finally:
             session.sign_out()
             gate.close()

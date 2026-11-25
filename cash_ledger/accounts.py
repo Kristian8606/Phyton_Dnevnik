@@ -29,7 +29,7 @@ def _username_key(username: str) -> str:
 def _account_credentials(username: str, password: str) -> tuple[str, bytes, bytes]:
     key = _username_key(username)
     if not key or len(key) > MAX_USERNAME_LENGTH:
-        raise AccountError("Въведи потребителско име до 64 знака.")
+        raise AccountError("Въведи име за вход до 64 знака.")
     if not password.strip() or len(password) > MAX_PASSWORD_LENGTH:
         raise AccountError("Въведи парола.")
     salt = token_bytes(16)
@@ -99,22 +99,22 @@ class LocalAccounts:
         with closing(sqlite3.connect(self._path)) as db:
             return db.execute("SELECT 1 FROM accounts LIMIT 1").fetchone() is not None
 
-    def register(self, username: str, password: str, code: str, *, administrator_password: str = ""):
+    def register(self, username: str, password: str, code: str, *, as_administrator: bool = False):
         if code.strip() != REGISTRATION_CODE:
             raise AccountError("Кодът за регистрация е грешен.")
         key, salt, password_hash = _account_credentials(username, password)
         with closing(sqlite3.connect(self._path)) as db, db:
             db.execute("BEGIN IMMEDIATE")
-            administrator = db.execute("""
-                SELECT salt, password_hash FROM accounts JOIN administrator USING (username_key)
-            """).fetchone()
-            if administrator is not None and not _matches(administrator, administrator_password):
-                raise AccountError("Въведи правилната парола на администратора.")
+            administrator_exists = db.execute("SELECT 1 FROM administrator").fetchone() is not None
+            if as_administrator and administrator_exists:
+                raise AccountError("Вече има администратор. За смяна избери „Нулирай администратора“.")
+            if not as_administrator and not administrator_exists:
+                raise AccountError("Създай първо администратор.")
             try:
                 db.execute("INSERT INTO accounts VALUES (?, ?, ?)", (key, salt, password_hash))
             except sqlite3.IntegrityError as exc:
-                raise AccountError("Това потребителско име вече е регистрирано.") from exc
-            if administrator is None:
+                raise AccountError("Това име вече е регистрирано.") from exc
+            if as_administrator:
                 db.execute("INSERT INTO administrator VALUES (1, ?)", (key,))
 
     def has_recovery_code(self) -> bool:
@@ -169,7 +169,7 @@ class LocalAccounts:
                 try:
                     db.execute("INSERT INTO accounts VALUES (?, ?, ?)", (key, salt, password_hash))
                 except sqlite3.IntegrityError as exc:
-                    raise AccountError("Това потребителско име вече е регистрирано.") from exc
+                    raise AccountError("Това име вече е регистрирано.") from exc
                 db.execute("UPDATE administrator SET username_key = ? WHERE singleton = 1", (key,))
                 db.execute("DELETE FROM accounts WHERE username_key = ?", (old_key,))
             db.execute("UPDATE administrator_recovery SET failed_attempts = 0, retry_after = 0")

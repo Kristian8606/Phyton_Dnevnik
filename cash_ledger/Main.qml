@@ -291,7 +291,7 @@ ApplicationWindow {
                 Layout.preferredWidth: Math.min(implicitWidth, 142)
                 Layout.minimumWidth: 0
                 elide: Text.ElideRight
-                Accessible.name: "Влязъл потребител: " + text
+                Accessible.name: (win.controller && win.controller.isAdministrator ? "Администратор · " : "Юзър · ") + text
                 ToolTip.visible: userHover.hovered
                 ToolTip.text: Accessible.name
                 HoverHandler { id: userHover }
@@ -967,7 +967,7 @@ ApplicationWindow {
                 id: revisionUsername
                 objectName: "revisionUsername"
                 Layout.fillWidth: true
-                placeholderText: "Потребителско име на администратора"
+                placeholderText: "Име на администратора"
                 Accessible.name: placeholderText
                 maximumLength: 64
                 onAccepted: revisionPassword.forceActiveFocus()
