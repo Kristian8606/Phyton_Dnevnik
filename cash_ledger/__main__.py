@@ -13,7 +13,6 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtNetwork import QSslSocket
 
 from . import __version__
-from .accounts import REGISTRATION_CODE
 from .data_location import default_database, program_archive_directory
 from .demo import prepare_demo
 from .session import DesktopSession
@@ -25,7 +24,10 @@ def check_startup(app: QGuiApplication) -> int:
     with TemporaryDirectory() as temporary:
         directory = Path(temporary)
         session = DesktopSession(directory, lambda: directory / "test.sqlite3", show_windows=False)
-        if not session.start() or session.submit("startup-test", token_urlsafe(16), REGISTRATION_CODE):
+        if not session.start():
+            return 1
+        session.beginRegistration("administrator")
+        if session.submit("startup-test", token_urlsafe(16), "4826"):
             return 1
         app.processEvents()
     return 0

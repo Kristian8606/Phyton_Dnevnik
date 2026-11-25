@@ -1,5 +1,7 @@
+from contextlib import closing
 from datetime import date
 from pathlib import Path
+import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
 
@@ -48,13 +50,21 @@ class SessionTests(unittest.TestCase):
         try:
             app.processEvents()
             self.assertEqual(opens, [])
+            self.assertEqual(field("accountFormTitle").property("text"), "Вход")
+            self.assertEqual(field("userRegistrationButton").property("text"), "Юзър")
+            self.assertEqual(field("administratorButton").property("text"), "Администратор")
+            click("userRegistrationButton")
+            submit("Втори", "different-pass", "0000")
+            self.assertIn("първо", field("loginError").property("text"))
+            click("backToLoginButton")
+            click("administratorButton")
             self.assertEqual(field("accountFormTitle").property("text"), "Администратор")
             self.assertEqual(field("loginPassword").property("placeholderText"), "Парола за администратора")
             self.assertIsNone(gate.findChild(QObject, "administratorPassword"))
-            submit("Касиер", "test-secret", "1234")
-            self.assertEqual(opens, [])
-            self.assertIn("Кодът", field("loginError").property("text"))
             submit("Касиер", "test-secret", "0000")
+            self.assertEqual(opens, [])
+            self.assertIn("различен", field("loginError").property("text"))
+            submit("Касиер", "test-secret", "4826")
             self.assertEqual(opens, [database])
             self.assertFalse(gate.isVisible())
 
@@ -67,15 +77,19 @@ class SessionTests(unittest.TestCase):
             labels = [item.property("text") or "" for item in menu.findChildren(QObject)]
             self.assertIn("Изход от профила", labels)
             self.assertFalse(any(label.startswith(("Нов юзър", "Код за нулиране")) for label in labels))
-            session.add_user()
-            self.assertFalse(session.addingUser)
+            session.beginRegistration("user")
+            self.assertEqual(session.registrationRole, "")
 
             session.sign_out()
             app.processEvents()
             self.assertTrue(gate.isVisible())
             self.assertFalse(field("registrationCode").property("visible"))
-            self.assertEqual(field("registrationButton").property("text"), "Регистрация на юзър")
-            click("registrationButton")
+            click("administratorButton")
+            self.assertTrue(field("confirmAdministratorReset").property("visible"))
+            self.assertEqual(field("confirmAdministratorReset").property("text"), "Потвърди")
+            QTest.keyClick(gate, Qt.Key.Key_Escape)
+            app.processEvents()
+            click("userRegistrationButton")
             self.assertEqual(field("accountFormTitle").property("text"), "Юзър")
             self.assertEqual(field("loginPassword").property("placeholderText"), "Парола за юзъра")
             self.assertIsNone(gate.findChild(QObject, "administratorPassword"))
@@ -125,8 +139,11 @@ class SessionTests(unittest.TestCase):
         database = directory / "ledger.sqlite3"
         ledger = Ledger(database)
         ledger.save(date.today(), {"income": "125"})
-        accounts = LocalAccounts(directory / "access" / "accounts.sqlite3")
-        accounts.register("Админ", "forgotten-password", "0000", as_administrator=True)
+        accounts_path = directory / "access" / "accounts.sqlite3"
+        accounts = LocalAccounts(accounts_path)
+        accounts.register("Админ", "forgotten-password", "0482", as_administrator=True)
+        with closing(sqlite3.connect(accounts_path)) as db, db:
+            db.execute("DELETE FROM administrator_recovery")
         accounts.register("Юзър", "user-password", "0000")
 
         session = DesktopSession(directory, lambda: database)
@@ -153,7 +170,7 @@ class SessionTests(unittest.TestCase):
             session.sign_out()
             app.processEvents()
 
-            click(gate, "resetAdministratorButton")
+            click(gate, "administratorButton")
             self.assertEqual(item(gate, "confirmAdministratorReset").property("text"), "Запази кода")
             item(gate, "resetRecoveryCode").setProperty("text", "0482")
             item(gate, "resetUsername").setProperty("text", "Юзър")
@@ -164,7 +181,7 @@ class SessionTests(unittest.TestCase):
             item(gate, "resetPassword").setProperty("text", "forgotten-password")
             click(gate, "confirmAdministratorReset")
 
-            click(gate, "resetAdministratorButton")
+            click(gate, "administratorButton")
             self.assertEqual(item(gate, "confirmAdministratorReset").property("text"), "Потвърди")
             item(gate, "resetRecoveryCode").setProperty("text", "0000")
             item(gate, "resetUsername").setProperty("text", "Нов админ")

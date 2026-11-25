@@ -16,10 +16,12 @@ class AccountTests(unittest.TestCase):
         self.accounts = LocalAccounts(self.path)
 
     def test_registration_requires_the_four_character_code(self):
-        with self.assertRaisesRegex(AccountError, "Кодът"):
+        with self.assertRaisesRegex(AccountError, "четири"):
             self.accounts.register("Касиер", "test-pass", "0", as_administrator=True)
+        with self.assertRaisesRegex(AccountError, "различен"):
+            self.accounts.register("Касиер", "test-pass", "0000", as_administrator=True)
         self.assertFalse(self.accounts.has_users())
-        self.accounts.register("Касиер", "test-pass", "0000", as_administrator=True)
+        self.accounts.register("Касиер", "test-pass", "4826", as_administrator=True)
         reopened = LocalAccounts(self.path)
         self.assertTrue(reopened.authenticate("  КАСИЕР  ", "test-pass"))
         self.assertFalse(reopened.authenticate("Касиер", "0000"))
@@ -27,9 +29,9 @@ class AccountTests(unittest.TestCase):
     def test_first_registration_cannot_be_reused_and_passwords_are_salted(self):
         with self.assertRaisesRegex(AccountError, "първо"):
             self.accounts.register("втори", "sample-password", "0000")
-        self.accounts.register("първи", "sample-password", "0000", as_administrator=True)
+        self.accounts.register("първи", "sample-password", "4826", as_administrator=True)
         with self.assertRaisesRegex(AccountError, "Вече има"):
-            self.accounts.register("друг", "sample-password", "0000", as_administrator=True)
+            self.accounts.register("друг", "sample-password", "6134", as_administrator=True)
         with self.assertRaisesRegex(AccountError, "вече"):
             self.accounts.register("ПЪРВИ", "other", "0000")
         self.accounts.register("втори", "sample-password", "0000")
@@ -52,13 +54,11 @@ class AccountTests(unittest.TestCase):
         self.assertNotIn(b"sample-password", self.path.read_bytes())
 
     def test_recovery_reuses_the_configured_four_digit_code(self):
-        self.accounts.register("Админ", "old-password", "0000", as_administrator=True)
+        self.accounts.register("Админ", "old-password", "4826", as_administrator=True)
         self.accounts.register("Юзър", "user-password", "0000")
         with self.assertRaises(AccountError):
             self.accounts.configure_recovery_code("Юзър", "user-password", "4826")
-        with self.assertRaisesRegex(AccountError, "четири"):
-            self.accounts.configure_recovery_code("Админ", "old-password", "957301624")
-        self.accounts.configure_recovery_code("Админ", "old-password", "4826")
+        self.assertTrue(self.accounts.has_recovery_code())
         self.assertNotIn(b"4826", self.path.read_bytes())
 
         reopened = LocalAccounts(self.path)
@@ -84,7 +84,9 @@ class AccountTests(unittest.TestCase):
         self.assertTrue(reopened.is_administrator("Трети"))
 
     def test_recovery_accepts_a_legacy_code_and_pauses_after_repeated_failures(self):
-        self.accounts.register("Админ", "old-password", "0000", as_administrator=True)
+        self.accounts.register("Админ", "old-password", "4826", as_administrator=True)
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute("DELETE FROM administrator_recovery")
         with self.assertRaisesRegex(AccountError, "създаден"):
             self.accounts.reset_administrator("4826", "Админ", "new-password")
         salt = bytes(16)

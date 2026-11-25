@@ -50,6 +50,8 @@ def _matches(record, password: str) -> bool:
 def _store_recovery_code(db: sqlite3.Connection, code: str):
     if len(code) != 4 or not code.isascii() or not code.isdecimal():
         raise AccountError("Въведи код от четири цифри.")
+    if code == REGISTRATION_CODE:
+        raise AccountError("Кодът за администратора трябва да е различен от кода за юзър.")
     salt = token_bytes(16)
     db.execute("""
         INSERT OR REPLACE INTO administrator_recovery (singleton, salt, code_hash, is_numeric)
@@ -100,7 +102,8 @@ class LocalAccounts:
             return db.execute("SELECT 1 FROM accounts LIMIT 1").fetchone() is not None
 
     def register(self, username: str, password: str, code: str, *, as_administrator: bool = False):
-        if code.strip() != REGISTRATION_CODE:
+        code = code.strip()
+        if not as_administrator and code != REGISTRATION_CODE:
             raise AccountError("Кодът за регистрация е грешен.")
         key, salt, password_hash = _account_credentials(username, password)
         with closing(sqlite3.connect(self._path)) as db, db:
@@ -116,6 +119,7 @@ class LocalAccounts:
                 raise AccountError("Това име вече е регистрирано.") from exc
             if as_administrator:
                 db.execute("INSERT INTO administrator VALUES (1, ?)", (key,))
+                _store_recovery_code(db, code)
 
     def has_recovery_code(self) -> bool:
         with closing(sqlite3.connect(self._path)) as db:

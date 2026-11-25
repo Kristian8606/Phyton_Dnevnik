@@ -14,8 +14,9 @@ ApplicationWindow {
     title: "Дневник"
     color: dark ? "#101b2a" : "#eaf5ff"
 
-    readonly property bool registering: session !== null && session.registering
-    readonly property bool addingUser: session !== null && session.addingUser
+    readonly property string registrationRole: session ? session.registrationRole : ""
+    readonly property bool registering: registrationRole !== ""
+    readonly property bool addingUser: registrationRole === "user"
     readonly property string theme: preferences ? preferences.theme : "system"
     readonly property bool dark: theme === "dark"
                                  || (theme === "system"
@@ -53,7 +54,7 @@ ApplicationWindow {
 
     onVisibleChanged: if (visible) clearForm()
     onClosing: event => {
-        if (addingUser) {
+        if (registering) {
             event.accepted = false
             session.cancelRegistration()
         }
@@ -208,7 +209,7 @@ ApplicationWindow {
             AccountField {
                 id: verification
                 objectName: "registrationCode"
-                placeholderText: "Код за верификация"
+                placeholderText: access.addingUser ? "Код за верификация" : "Код за администратора"
                 visible: access.registering
                 maximumLength: 4
                 inputMethodHints: Qt.ImhDigitsOnly
@@ -252,27 +253,42 @@ ApplicationWindow {
                     border.color: submitButton.activeFocus ? access.ink : "transparent"
                 }
             }
-            Button {
-                objectName: "registrationButton"
-                visible: !access.registering || access.addingUser
+            RowLayout {
+                visible: !access.registering
                 Layout.alignment: Qt.AlignHCenter
-                text: access.addingUser ? "Назад" : "Регистрация на юзър"
-                flat: true
-                onClicked: {
-                    if (access.addingUser)
-                        access.session.cancelRegistration()
-                    else
-                        access.session.add_user()
-                    access.clearForm()
+                Button {
+                    objectName: "userRegistrationButton"
+                    text: "Юзър"
+                    flat: true
+                    onClicked: {
+                        access.session.beginRegistration("user")
+                        access.clearForm()
+                    }
+                }
+                Button {
+                    objectName: "administratorButton"
+                    text: "Администратор"
+                    flat: true
+                    onClicked: {
+                        if (access.session.canResetAdministrator)
+                            resetDialog.open()
+                        else {
+                            access.session.beginRegistration("administrator")
+                            access.clearForm()
+                        }
+                    }
                 }
             }
             Button {
-                objectName: "resetAdministratorButton"
-                visible: access.session && access.session.canResetAdministrator
+                objectName: "backToLoginButton"
+                visible: access.registering
                 Layout.alignment: Qt.AlignHCenter
-                text: "Нулирай администратора…"
+                text: "Назад"
                 flat: true
-                onClicked: resetDialog.open()
+                onClicked: {
+                    access.session.cancelRegistration()
+                    access.clearForm()
+                }
             }
         }
     }

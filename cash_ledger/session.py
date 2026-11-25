@@ -25,7 +25,7 @@ class DesktopSession(QObject):
         self._demo = demo
         self._show_windows = show_windows
         self._archive_directory = archive_directory
-        self._adding_user = False
+        self._registration_role = ""
         self._work_engine = None
         self._access_engine = QQmlApplicationEngine(self)
 
@@ -41,13 +41,9 @@ class DesktopSession(QObject):
             windows[0].show()
         return True
 
-    @Property(bool, notify=formChanged)
-    def registering(self):
-        return not self._has_users or self._adding_user
-
-    @Property(bool, notify=formChanged)
-    def addingUser(self):
-        return self._adding_user
+    @Property(str, notify=formChanged)
+    def registrationRole(self):
+        return self._registration_role
 
     @Property(bool, notify=formChanged)
     def canResetAdministrator(self):
@@ -58,20 +54,23 @@ class DesktopSession(QObject):
         if self._work_engine is not None:
             return ""
         try:
-            if self.registering:
-                self._accounts.register(username, password, code, as_administrator=not self._adding_user)
+            if self._registration_role:
+                as_administrator = self._registration_role == "administrator"
+                self._accounts.register(username, password, code, as_administrator=as_administrator)
                 self._has_users = True
-                if self._adding_user:
-                    self.cancelRegistration()
+                self.cancelRegistration()
+                if not as_administrator:
                     return ""
-                self.formChanged.emit()
             elif not self._accounts.authenticate(username, password):
                 return "Грешно име за вход или парола."
             administrator = self._accounts.is_administrator(username)
         except AccountError as exc:
-            if not self._has_users:
-                self._has_users = self._accounts.has_users()
-                self.formChanged.emit()
+            if not self._has_users and self._accounts.has_users():
+                self._has_users = True
+                if self._registration_role == "administrator":
+                    self.cancelRegistration()
+                else:
+                    self.formChanged.emit()
             return str(exc)
         except (OSError, sqlite3.Error):
             return "Профилите са недостъпни."
@@ -120,18 +119,20 @@ class DesktopSession(QObject):
             return "Промяната не можа да се запише."
         return ""
 
-    @Slot()
-    def add_user(self):
-        if self._adding_user or self._work_engine is not None:
+    @Slot(str)
+    def beginRegistration(self, role):
+        if self._registration_role or self._work_engine is not None or role not in ("user", "administrator"):
             return
-        self._adding_user = True
+        if role == "administrator" and self._has_users:
+            return
+        self._registration_role = role
         self.formChanged.emit()
 
     @Slot()
     def cancelRegistration(self):
-        if not self._adding_user:
+        if not self._registration_role:
             return
-        self._adding_user = False
+        self._registration_role = ""
         self.formChanged.emit()
 
     @Slot()
