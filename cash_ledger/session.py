@@ -26,7 +26,6 @@ class DesktopSession(QObject):
         self._show_windows = show_windows
         self._archive_directory = archive_directory
         self._adding_user = False
-        self._administrator = False
         self._work_engine = None
         self._access_engine = QQmlApplicationEngine(self)
 
@@ -60,7 +59,7 @@ class DesktopSession(QObject):
 
     @Slot(str, str, str, str, result=str)
     def submit(self, username, password, code, administrator_password=""):
-        if self._work_engine is not None and not self._adding_user:
+        if self._work_engine is not None:
             return ""
         try:
             if self.registering:
@@ -98,10 +97,8 @@ class DesktopSession(QObject):
         if not engine.rootObjects():
             return "Дневникът не можа да се отвори."
         self._work_engine = engine
-        self._administrator = administrator
         window = engine.rootObjects()[0]
         window.signOutRequested.connect(self.sign_out)
-        window.registrationRequested.connect(self.add_user)
         self._access_engine.rootObjects()[0].hide()
         return ""
 
@@ -129,13 +126,10 @@ class DesktopSession(QObject):
 
     @Slot()
     def add_user(self):
-        if self._adding_user or (self._work_engine is not None and not self._administrator):
+        if self._adding_user or self._work_engine is not None:
             return
         self._adding_user = True
         self.formChanged.emit()
-        self._access_engine.rootObjects()[0].show()
-        if self._work_engine is not None:
-            self._work_engine.rootObjects()[0].hide()
 
     @Slot()
     def cancelRegistration(self):
@@ -143,9 +137,6 @@ class DesktopSession(QObject):
             return
         self._adding_user = False
         self.formChanged.emit()
-        if self._work_engine is not None:
-            self._work_engine.rootObjects()[0].show()
-            self._access_engine.rootObjects()[0].hide()
 
     @Slot()
     def sign_out(self):
@@ -153,7 +144,6 @@ class DesktopSession(QObject):
             return
         self._access_engine.rootObjects()[0].show()
         engine, self._work_engine = self._work_engine, None
-        self._administrator = False
         self.formChanged.emit()
         engine.rootObjects()[0].close()
         engine.deleteLater()

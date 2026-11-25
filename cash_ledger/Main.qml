@@ -16,7 +16,6 @@ ApplicationWindow {
     property var revisionReport: ({})
     property string revisionFeedback: ""
     signal signOutRequested()
-    signal registrationRequested()
     title: testMode ? "Дневник · Тестови дни" : "Дневник"
     width: Math.max(800, Math.min(1400, Screen.desktopAvailableWidth - 28))
     height: Math.max(540, Math.min(760, Screen.desktopAvailableHeight - 60))
@@ -355,12 +354,6 @@ ApplicationWindow {
                         objectName: "updatesMenuItem"
                         text: win.updates.supported ? "Обновяване…" : "За „Дневник“…"
                         onTriggered: updatesDialog.open()
-                    }
-                    MenuItem {
-                        enabled: win.controller && win.controller.isAdministrator
-                        visible: win.sessionEnabled
-                        text: "Нов служител…"
-                        onTriggered: win.registrationRequested()
                     }
                     MenuItem {
                         visible: win.sessionEnabled

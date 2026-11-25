@@ -64,6 +64,12 @@ class SessionTests(unittest.TestCase):
             admin = journal.property("controller")
             self.assertTrue(admin.isAdministrator)
             self.assertIn("Грешна парола", admin.restoreArchive(QUrl.fromLocalFile(str(database)), "wrong")["message"])
+            menu = journal.findChild(QObject, "settingsMenu")
+            labels = [item.property("text") or "" for item in menu.findChildren(QObject)]
+            self.assertIn("Изход от профила", labels)
+            self.assertFalse(any(label.startswith(("Нов служител", "Код за нулиране")) for label in labels))
+            session.add_user()
+            self.assertFalse(session.addingUser)
 
             session.sign_out()
             app.processEvents()
