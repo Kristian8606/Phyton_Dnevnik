@@ -12,7 +12,7 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from .ledger import BLOCKS, Ledger, MONETARY, SEARCH_LIMIT, ValidationError, WEIGHTS, weight_error
 
 from .preferences import Preferences
-from .table_print import PrintColumn, print_table, save_table_pdf
+from .table_print import PrintColumn, print_table
 from .updates import WindowsUpdates
 
 COLUMNS = (
@@ -229,7 +229,7 @@ class LedgerWindow(QObject):
             raise ValidationError("Началната дата трябва да е преди или на крайната дата.")
         if last > date.today():
             raise ValidationError("Избери днешна или по-ранна крайна дата.")
-        selected = self._ledger.rows_between(first, last)
+        selected, totals = self._ledger.operation_period(first, last)
         if not selected:
             raise ValidationError("Няма записани операции за избраните дати.")
 
@@ -246,27 +246,27 @@ class LedgerWindow(QObject):
             if first != last:
                 cells.insert(0, (day.strftime("%d.%m.%Y"),))
             rows.append(cells)
-        return columns, rows
+        if first == last:
+            period = ("Дата", first.strftime("%d.%m.%Y"))
+            carried_label, cash_label = "Пренос от предния ден", "Каса към датата"
+        else:
+            period = ("Период", f"{first:%d.%m.%Y} – {last:%d.%m.%Y}")
+            carried_label, cash_label = "Пренос в началото", "Каса в края"
+        overview = (
+            (period, (carried_label, money(totals["carried"])), (cash_label, money(totals["cash"]))),
+            (("Печалба", money(totals["profit"])), ("Откуп", money(totals["redemption"])),
+             ("Залози", money(totals["pledges"])), ("Лихви", money(totals["interest"]))),
+        )
+        return columns, rows, overview
 
     @Slot(str, str, result="QVariantMap")
     def printOperations(self, first_iso, last_iso):
         try:
-            columns, rows = self._operation_table_for_print(first_iso, last_iso)
-            printed = print_table(columns, rows)
+            columns, rows, overview = self._operation_table_for_print(first_iso, last_iso)
+            printed = print_table(columns, rows, overview)
         except (ValidationError, OSError, sqlite3.Error) as error:
             return {"ok": False, "message": str(error)}
         return {"ok": True, "message": "Таблицата е изпратена за печат." if printed else ""}
-
-    @Slot(str, str, QUrl, result="QVariantMap")
-    def exportOperationsPdf(self, first_iso, last_iso, url):
-        if not url.isLocalFile():
-            return {"ok": False, "message": "Избери локален PDF файл."}
-        try:
-            columns, rows = self._operation_table_for_print(first_iso, last_iso)
-            save_table_pdf(Path(url.toLocalFile()), columns, rows)
-        except (ValidationError, OSError, sqlite3.Error) as error:
-            return {"ok": False, "message": str(error)}
-        return {"ok": True, "message": "PDF файлът е записан."}
 
     @Property(bool, constant=True)
     def isAdministrator(self):

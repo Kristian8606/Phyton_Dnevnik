@@ -364,6 +364,22 @@ def _table_rows(records):
     return rows, operation_ids
 
 
+def _operation_totals(rows):
+    totals = {key: sum(row[key].value for row in rows if key in row) for key in MONETARY}
+    unmarked = [row for row in rows if "marker" in row and not row["marker"].value]
+    incoming = totals["interest"] + totals["principal"] + totals["income"]
+    outgoing = totals["cost"] + totals["pledgeAmount"] + totals["buyGold"] + totals["buySilver"]
+    return {
+        "profit": totals["interest"],
+        "interest": sum(row["interest"].value for row in unmarked),
+        "redemption": sum(row["principal"].value for row in unmarked),
+        "pledges": totals["pledgeAmount"],
+        "incoming": incoming,
+        "outgoing": outgoing,
+        "net": incoming - outgoing,
+    }
+
+
 class Ledger:
     def __init__(self, path: Path, *, archive_directory: Path | None = None):
         self.path = path
@@ -621,7 +637,7 @@ class Ledger:
                 queries + " ORDER BY day", {"first": first.isoformat(), "last": last.isoformat()}
             )]
 
-    def rows_between(self, first: date, last: date) -> list[tuple[date, dict[str, Cell]]]:
+    def operation_period(self, first: date, last: date) -> tuple[list[tuple[date, dict[str, Cell]]], dict[str, int]]:
         records = defaultdict(lambda: defaultdict(list))
         bounds = (first.isoformat(), last.isoformat())
         with self._connection() as db:
@@ -632,8 +648,12 @@ class Ledger:
             for block in BLOCKS:
                 for row in db.execute(f"SELECT * FROM {block} WHERE day BETWEEN ? AND ? ORDER BY day, id", bounds):
                     records[row["day"]][block].append((row["id"], _cells(block, row)))
-        return [(date.fromisoformat(day), row) for day, blocks in sorted(records.items())
-                for row in _table_rows(blocks)[0]]
+            balance = db.execute(BALANCE_SQL, {"day": bounds[1]}).fetchone()[0]
+        dated_rows = [(date.fromisoformat(day), row) for day, blocks in sorted(records.items())
+                      for row in _table_rows(blocks)[0]]
+        totals = _operation_totals([row for _, row in dated_rows])
+        totals.update(cash=balance, carried=balance - totals["net"])
+        return dated_rows, totals
 
     def find_number(self, query: str) -> list[NumberMatch]:
         needle = query.strip().casefold()
@@ -667,17 +687,4 @@ class Ledger:
             balance = db.execute(BALANCE_SQL, {"day": iso}).fetchone()[0]
 
         rows, operation_ids = _table_rows(records)
-        totals = {key: sum(row[key].value for row in rows if key in row) for key in MONETARY}
-        unmarked = [row for _, row in records["contracts"] if not row["marker"].value]
-        incoming = totals["interest"] + totals["principal"] + totals["income"]
-        outgoing = totals["cost"] + totals["pledgeAmount"] + totals["buyGold"] + totals["buySilver"]
-        return DayLedger(rows, operation_ids, {
-            "cash": balance,
-            "profit": totals["interest"],
-            "interest": sum(row["interest"].value for row in unmarked),
-            "redemption": sum(row["principal"].value for row in unmarked),
-            "pledges": totals["pledgeAmount"],
-            "incoming": incoming,
-            "outgoing": outgoing,
-            "net": incoming - outgoing,
-        })
+        return DayLedger(rows, operation_ids, {"cash": balance, **_operation_totals(rows)})

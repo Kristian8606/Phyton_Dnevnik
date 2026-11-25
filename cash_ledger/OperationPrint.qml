@@ -1,7 +1,5 @@
-import QtCore
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Dialogs as NativeDialogs
 import QtQuick.Layouts
 
 Item {
@@ -17,6 +15,15 @@ Item {
     readonly property string first: period.checked ? firstDate : ""
     readonly property string last: period.checked ? lastDate : ""
     readonly property bool validRange: !period.checked || firstDate <= lastDate
+
+    onVisibleChanged: {
+        if (visible) {
+            today.checked = true
+            firstDate = controller.todayIso
+            lastDate = controller.todayIso
+            result = ({})
+        }
+    }
 
     function chooseDate(start) {
         choosingStart = start
@@ -35,7 +42,7 @@ Item {
         rightPadding: 13
         contentItem: Label {
             text: button.text
-            color: button.primary ? view.tones.onAccent : view.tones.text
+            color: button.primary && button.enabled ? view.tones.onAccent : view.tones.text
             font.weight: button.primary ? Font.DemiBold : Font.Normal
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
@@ -74,6 +81,7 @@ Item {
             RowLayout {
                 ButtonGroup { id: rangeMode }
                 RadioButton {
+                    id: today
                     objectName: "printTodayOption"
                     text: "Днес"
                     checked: true
@@ -117,22 +125,13 @@ Item {
                                        : (view.result.message || "")
                 color: view.validRange && view.result.ok ? view.tones.muted : view.warningColor
             }
-            RowLayout {
+            PrintAction {
+                objectName: "printOperationsButton"
                 Layout.alignment: Qt.AlignRight
-                spacing: 8
-                PrintAction {
-                    objectName: "exportOperationsPdfButton"
-                    text: "Запази PDF…"
-                    enabled: view.validRange
-                    onClicked: pdfPicker.open()
-                }
-                PrintAction {
-                    objectName: "printOperationsButton"
-                    text: "Печат…"
-                    primary: true
-                    enabled: view.validRange
-                    onClicked: view.result = view.controller.printOperations(view.first, view.last)
-                }
+                text: "Печат…"
+                primary: true
+                enabled: view.validRange
+                onClicked: view.result = view.controller.printOperations(view.first, view.last)
             }
         }
     }
@@ -154,15 +153,5 @@ Item {
             close()
             parent.forceActiveFocus()
         }
-    }
-
-    NativeDialogs.FileDialog {
-        id: pdfPicker
-        title: "Запази таблицата като PDF"
-        fileMode: NativeDialogs.FileDialog.SaveFile
-        nameFilters: ["PDF файлове (*.pdf)"]
-        defaultSuffix: "pdf"
-        currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
-        onAccepted: view.result = view.controller.exportOperationsPdf(view.first, view.last, selectedFile)
     }
 }

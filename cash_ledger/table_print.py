@@ -3,8 +3,6 @@
 from dataclasses import dataclass
 from html import escape
 from math import floor
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
 from PySide6.QtCore import QMarginsF, QRectF, Qt
 from PySide6.QtGui import QFont, QFontMetricsF, QPageLayout, QPageSize, QPainter, QTextDocument, QTextOption
@@ -19,7 +17,20 @@ class PrintColumn:
     numeric: bool = False
 
 
-def _table_markup(columns, rows, page_width):
+def _overview_markup(overview, column_count):
+    lines = []
+    for row in overview:
+        span, extra = divmod(column_count, len(row))
+        cells = "".join(
+            f'<td colspan="{span + (index < extra)}" bgcolor="#f3f5f7">'
+            f'{escape(label)}&nbsp;&nbsp;<b>{escape(value)}</b></td>'
+            for index, (label, value) in enumerate(row)
+        )
+        lines.append(f"<tr>{cells}</tr>")
+    return "".join(lines)
+
+
+def _table_markup(columns, rows, overview, page_width):
     total_width = sum(column.width for column in columns)
     font = QFont("Arial")
     font.setPixelSize(9)
@@ -57,7 +68,7 @@ def _table_markup(columns, rows, page_width):
         body.append("<tr>" + "".join(cells) + "</tr>")
     header = ('<body style="font-family:Arial,sans-serif;font-size:9px;color:#18212a;">'
               '<table border="1" cellspacing="0" cellpadding="4" width="100%" style="border-color:#a4aeb8;">'
-              f"<thead><tr>{headings}</tr></thead><tbody>")
+              f"<thead>{_overview_markup(overview, len(columns))}<tr>{headings}</tr></thead><tbody>")
     return header, body
 
 
@@ -107,11 +118,11 @@ def _pages(size, header, rows):
             first += 1
 
 
-def _print_table(printer, columns, rows):
+def _print_table(printer, columns, rows, overview):
     size = printer.pageRect(QPrinter.Unit.Point).size()
     if size.isEmpty():
         raise OSError("Избраният принтер няма достъпна област за печат.")
-    header, body = _table_markup(columns, rows, size.width())
+    header, body = _table_markup(columns, rows, overview, size.width())
     painter = QPainter()
     if not painter.begin(printer):
         raise OSError("Таблицата не можа да се отпечата.")
@@ -131,25 +142,12 @@ def _print_table(printer, columns, rows):
         raise OSError("Таблицата не можа да се отпечата.")
 
 
-def print_table(columns, rows) -> bool:
+def print_table(columns, rows, overview) -> bool:
     printer = _printer()
     dialog = QPrintDialog(printer)
     dialog.setOption(QAbstractPrintDialog.PrintDialogOption.PrintPageRange, False)
     dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
     if dialog.exec() != QDialog.DialogCode.Accepted:
         return False
-    _print_table(printer, columns, rows)
+    _print_table(printer, columns, rows, overview)
     return True
-
-
-def save_table_pdf(destination: Path, columns, rows):
-    with TemporaryDirectory(prefix=".dnevnik-print-", dir=destination.parent) as temporary:
-        file = Path(temporary) / "table.pdf"
-        printer = _printer()
-        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
-        printer.setOutputFileName(str(file))
-        _print_table(printer, columns, rows)
-        with file.open("rb") as contents:
-            if contents.read(5) != b"%PDF-":
-                raise OSError("PDF файлът не можа да се създаде.")
-        file.replace(destination)

@@ -8,7 +8,8 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from PySide6.QtCore import QObject, QPointF, Qt, QUrl, qInstallMessageHandler
+from PySide6.QtCore import QObject, QPointF, Qt, qInstallMessageHandler
+from PySide6.QtPrintSupport import QPrinter
 from PySide6.QtQuick import QQuickItem, QQuickWindow
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtTest import QTest
@@ -16,6 +17,7 @@ from PySide6.QtTest import QTest
 from cash_ledger.desktop import make_window
 from cash_ledger.demo import prepare_demo
 from cash_ledger.ledger import Ledger
+from cash_ledger.table_print import _print_table, _printer
 
 
 def visual_item(root: QQuickItem, name: str) -> QQuickItem | None:
@@ -211,7 +213,8 @@ class DesktopTests(unittest.TestCase):
             ledger = Ledger(database)
             ledger.save(previous - timedelta(days=1), {"income": "400"})
             ledger.save(previous, {"income": "125 първи ден"})
-            ledger.save(today, {"income": "60 днес"})
+            ledger.save(today, {"income": "60 днес", "contract": "124", "interest": "10",
+                                "principal": "20", "pledge": "500", "pledgeAmount": "5"})
             engine, controller = make_window(database)
             window = engine.rootObjects()[0]
             try:
@@ -229,13 +232,21 @@ class DesktopTests(unittest.TestCase):
 
                 click("printTab")
                 self.assertFalse(visual_item(root, "saveOperationButton").property("visible"))
+                self.assertIsNone(visual_item(root, "exportOperationsPdfButton"))
                 self.assertTrue(visual_item(root, "printTodayOption").property("checked"))
                 with patch("cash_ledger.desktop.print_table", return_value=True) as print_table:
                     click("printOperationsButton")
-                    columns, rows = print_table.call_args.args
+                    columns, rows, overview = print_table.call_args.args
                     self.assertEqual(columns[0].heading, "Пр.")
                     self.assertEqual(len(rows), 1)
                     self.assertIn(("60,00", "", "днес"), rows[0])
+                    self.assertEqual(dict(overview[0]), {
+                        "Дата": today.strftime("%d.%m.%Y"), "Пренос от предния ден": "525,00 €",
+                        "Каса към датата": "610,00 €",
+                    })
+                    self.assertEqual(dict(overview[1]), {
+                        "Печалба": "10,00 €", "Откуп": "20,00 €", "Залози": "5,00 €", "Лихви": "10,00 €",
+                    })
 
                     click("printPeriodOption")
                     click("printFirstDate")
@@ -243,20 +254,26 @@ class DesktopTests(unittest.TestCase):
                         click("calendarPreviousMonth")
                     click("calendar_day_" + previous.isoformat())
                     click("printOperationsButton")
-                    columns, rows = print_table.call_args.args
+                    columns, rows, overview = print_table.call_args.args
                     self.assertEqual(columns[0].heading, "Дата")
                     self.assertEqual(len(rows), 2)
                     self.assertEqual([row[0][0] for row in rows],
                                      [previous.strftime("%d.%m.%Y"), today.strftime("%d.%m.%Y")])
                     self.assertIn(("125,00", "", "първи ден"), rows[0])
+                    self.assertEqual(dict(overview[0])["Пренос в началото"], "400,00 €")
+                    self.assertEqual(dict(overview[0])["Каса в края"], "610,00 €")
+                    self.assertEqual(controller.dateIso, today.isoformat())
 
+                click("operationsTab")
+                click("printTab")
+                self.assertTrue(visual_item(root, "printTodayOption").property("checked"))
                 target = directory / "таблица.pdf"
-                url = QUrl.fromLocalFile(str(target))
-                invalid = controller.exportOperationsPdf(today.isoformat(), previous.isoformat(), url)
+                invalid = controller.printOperations(today.isoformat(), previous.isoformat())
                 self.assertFalse(invalid["ok"])
-                self.assertFalse(target.exists())
-                result = controller.exportOperationsPdf(previous.isoformat(), today.isoformat(), url)
-                self.assertTrue(result["ok"], result.get("message"))
+                printer = _printer()
+                printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+                printer.setOutputFileName(str(target))
+                _print_table(printer, columns, rows, overview)
                 self.assertTrue(target.read_bytes().startswith(b"%PDF-"))
             finally:
                 window.close()
