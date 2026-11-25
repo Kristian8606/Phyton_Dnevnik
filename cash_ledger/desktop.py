@@ -271,23 +271,6 @@ class LedgerWindow(QObject):
         refresh_error = self._select(date.today())
         return {"ok": True, "message": f"Ревизията е записана. Резервно копие: {archive.name}. {refresh_error}".strip()}
 
-    @Slot(result="QVariantMap")
-    def cashReport(self):
-        try:
-            history = self._ledger.cash_by_day(date.today())
-        except sqlite3.Error as error:
-            return {"ok": False, "message": STORE_ERROR + str(error)}
-        return {"ok": True, "days": [
-            {
-                "date": line.day.strftime("%d.%m.%Y"),
-                "iso": line.day.isoformat(),
-                "carried": money(line.carried),
-                "movement": money(line.movement, signed=True),
-                "closing": money(line.closing),
-            }
-            for line in history
-        ]}
-
     @Slot(str, result="QVariantMap")
     def findNumber(self, query):
         try:

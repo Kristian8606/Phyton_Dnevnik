@@ -173,12 +173,6 @@ ApplicationWindow {
         verticalAlignment: Text.AlignVCenter
     }
 
-    component ReportAmount: LedgerText {
-        Layout.fillWidth: true
-        Layout.preferredWidth: 120
-        horizontalAlignment: Text.AlignRight
-    }
-
     component LedgerButton: Button {
         id: control
         property bool primary: false
@@ -308,20 +302,6 @@ ApplicationWindow {
                 }
             }
             Item { Layout.fillWidth: true }
-            LedgerButton {
-                objectName: "cashReportButton"
-                visible: !win.showingRevisions
-                text: "Каса по дни"
-                onClicked: {
-                    const report = win.controller.cashReport()
-                    if (report.ok) {
-                        cashReportDialog.days = report.days
-                        cashReportDialog.open()
-                    } else {
-                        win.showResult(report)
-                    }
-                }
-            }
             LedgerText {
                 objectName: "activeUserLabel"
                 visible: win.activeUsername.length > 0
@@ -866,70 +846,24 @@ ApplicationWindow {
                 }
             }
 
-            LedgerText {
-                objectName: "weightWarning"
+            RowLayout {
                 Layout.fillWidth: true
-                visible: text !== ""
-                text: win.weightProblem || win.statusMessage
-                color: win.weightProblem || win.statusError ? win.warningColor : win.muted
-                wrapMode: Text.WordWrap
-                Accessible.role: Accessible.StaticText
-            }
+                spacing: 12
 
-            Rectangle {
-                Layout.fillWidth: true
-                implicitHeight: bottomBar.implicitHeight + 12
-                color: win.paper
-                border.color: win.line
-                radius: 8
-
-                RowLayout {
-                    id: bottomBar
-                    anchors.fill: parent
-                    anchors.leftMargin: 10
-                    anchors.rightMargin: 8
-                    anchors.topMargin: 6
-                    anchors.bottomMargin: 6
-                    spacing: 12
-                    Flow {
-                        id: summaryFlow
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: implicitHeight
-                        spacing: 13
-                        Row {
-                            height: 28
-                            spacing: 6
-                            LedgerText { objectName: "receiptsLabel"; height: parent.height; text: "Постъпления"; color: win.muted; font.pixelSize: 11 }
-                            LedgerText { height: parent.height; text: win.controller.summary.incoming; color: win.positive; font.weight: Font.DemiBold }
-                        }
-                        Row {
-                            height: 28
-                            spacing: 6
-                            LedgerText { height: parent.height; text: "Плащания"; color: win.muted; font.pixelSize: 11 }
-                            LedgerText { height: parent.height; text: win.controller.summary.outgoing; color: win.negative; font.weight: Font.DemiBold }
-                        }
-                        Rectangle {
-                            width: movement.implicitWidth + 16
-                            height: 28
-                            radius: 6
-                            color: win.headerSurface
-                            Row {
-                                id: movement
-                                anchors.centerIn: parent
-                                spacing: 6
-                                LedgerText { text: "Движение за деня"; color: win.muted; font.pixelSize: 11; height: 24 }
-                                LedgerText { text: win.controller.summary.net; font.weight: Font.DemiBold; height: 24 }
-                            }
-                        }
-                    }
-                    LedgerButton {
-                        objectName: "saveOperationButton"
-                        Layout.preferredHeight: 28
-                        Layout.alignment: Qt.AlignTop
-                        text: win.controller.isToday ? "Запиши" : "Запиши за днес"
-                        primary: true
-                        onClicked: win.submit(-1)
-                    }
+                LedgerText {
+                    objectName: "weightWarning"
+                    Layout.fillWidth: true
+                    text: win.weightProblem || win.statusMessage
+                    color: win.weightProblem || win.statusError ? win.warningColor : win.muted
+                    wrapMode: Text.WordWrap
+                    Accessible.ignored: text === ""
+                }
+                LedgerButton {
+                    objectName: "saveOperationButton"
+                    Layout.preferredHeight: 28
+                    text: win.controller.isToday ? "Запиши" : "Запиши за днес"
+                    primary: true
+                    onClicked: win.submit(-1)
                 }
             }
         }
@@ -1150,49 +1084,6 @@ ApplicationWindow {
             accent: win.actionFill, onAccent: win.accentText, hover: win.positiveBg, alternate: win.alternate
         })
         onMatchChosen: match => win.openMatch(match)
-    }
-
-    Dialog {
-        id: cashReportDialog
-        anchors.centerIn: Overlay.overlay
-        modal: true
-        width: Math.min(610, win.width - 32)
-        title: "Каса за последните 7 дни"
-        property var days: []
-        contentItem: ColumnLayout {
-            spacing: 4
-            RowLayout {
-                Layout.fillWidth: true
-                LedgerText { Layout.preferredWidth: 116; text: "Дата"; color: win.muted }
-                ReportAmount { text: "Пренос"; color: win.muted }
-                ReportAmount { text: "Движение"; color: win.muted }
-                ReportAmount { text: "Каса"; color: win.muted }
-            }
-            Repeater {
-                model: cashReportDialog.days
-                delegate: RowLayout {
-                    id: reportRow
-                    required property var modelData
-                    Layout.fillWidth: true
-                    LedgerButton {
-                        objectName: "report_day_" + reportRow.modelData.iso
-                        Layout.preferredWidth: 116
-                        text: reportRow.modelData.date
-                        onClicked: {
-                            win.showStatus(win.controller.goTo(reportRow.modelData.iso))
-                            cashReportDialog.close()
-                        }
-                    }
-                    ReportAmount { text: reportRow.modelData.carried }
-                    ReportAmount { text: reportRow.modelData.movement }
-                    ReportAmount {
-                        text: reportRow.modelData.closing
-                        font.weight: Font.DemiBold
-                    }
-                }
-            }
-            LedgerButton { Layout.alignment: Qt.AlignRight; text: "Затвори"; onClicked: cashReportDialog.close() }
-        }
     }
 
     Dialog {

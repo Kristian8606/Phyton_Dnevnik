@@ -172,7 +172,7 @@ class DesktopTests(unittest.TestCase):
             finally:
                 window.close()
 
-    def test_save_shares_the_receipts_bar_and_writes_the_entry(self):
+    def test_save_remains_below_the_table_without_the_cash_summary(self):
         app = QGuiApplication.instance() or QGuiApplication([])
         with TemporaryDirectory() as temporary:
             database = Path(temporary) / "ledger.sqlite3"
@@ -184,12 +184,13 @@ class DesktopTests(unittest.TestCase):
                 root = window.contentItem()
                 field = visual_item(root, "entry_income")
                 button = visual_item(root, "saveOperationButton")
-                receipts = visual_item(root, "receiptsLabel")
                 self.assertIsNotNone(button)
-                self.assertIsNotNone(receipts)
+                self.assertIsNone(visual_item(root, "cashReportButton"))
+                labels = [item.property("text") for item in window.findChildren(QObject)]
+                for label in ("Постъпления", "Плащания", "Движение за деня"):
+                    self.assertNotIn(label, labels)
                 point = button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
-                line = receipts.mapToScene(QPointF(0, receipts.height() / 2))
-                self.assertAlmostEqual(point.y(), line.y(), delta=2)
+                self.assertGreater(point.y(), field.mapToScene(QPointF(0, field.height())).y())
                 field.setProperty("text", "25")
                 QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
                                  point.toPoint())
@@ -298,7 +299,7 @@ class DesktopTests(unittest.TestCase):
                 if engine.rootObjects():
                     engine.rootObjects()[0].close()
 
-    def test_demo_report_opens_selected_day_and_shows_carried_cash(self):
+    def test_demo_calendar_opens_selected_day_and_shows_carried_cash(self):
         app = QGuiApplication.instance() or QGuiApplication([])
         with TemporaryDirectory() as temporary:
             database = Path(temporary) / "test-days.sqlite3"
@@ -318,10 +319,13 @@ class DesktopTests(unittest.TestCase):
                     QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, point)
                     app.processEvents()
 
-                click(visual_item(window.contentItem(), "cashReportButton"))
-                selected = (today - timedelta(days=2)).isoformat()
-                click(visual_item(window.contentItem(), "report_day_" + selected))
-                self.assertEqual(controller.dateIso, selected)
+                root = window.contentItem()
+                click(visual_item(root, "datePickerButton"))
+                selected = today - timedelta(days=2)
+                if selected.month != today.month:
+                    click(visual_item(root, "calendarPreviousMonth"))
+                click(visual_item(root, "calendar_day_" + selected.isoformat()))
+                self.assertEqual(controller.dateIso, selected.isoformat())
                 self.assertEqual(carried.property("text"), "1\u00a0115,00 €")
                 self.assertEqual(controller.summary["cash"], "1\u00a0185,00 €")
             finally:
