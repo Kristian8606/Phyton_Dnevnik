@@ -100,9 +100,11 @@ class DailyRows(QAbstractListModel):
 class LedgerWindow(QObject):
     changed = Signal()
 
-    def __init__(self, database: Path, parent=None):
+    def __init__(self, database: Path, parent=None, *, session_enabled=False, verify_admin=None):
         super().__init__(parent)
         self._ledger = Ledger(database)
+        self._session_enabled = session_enabled
+        self._verify_admin = verify_admin
         self._day = date.today()
         self._rows = DailyRows(self)
         self._summary = {}
@@ -191,6 +193,22 @@ class LedgerWindow(QObject):
     @Slot(result=str)
     def goToday(self):
         return self._select(date.today())
+
+    @Property(bool, constant=True)
+    def isAdministrator(self):
+        return self._verify_admin is not None
+
+    @Slot(result="QVariantMap")
+    def revisionReport(self):
+        today = date.today()
+        try:
+            totals = self._ledger.revision_totals(today)
+        except sqlite3.Error as error:
+            return {"ok": False, "message": STORE_ERROR + str(error)}
+        return {"ok": True, "row": {
+            "date": today.strftime("%d.%m.%Y"),
+            **{key: decimal_text(value) for key, value in totals.items()},
+        }}
 
     @Slot(result="QVariantMap")
     def cashReport(self):
@@ -314,11 +332,15 @@ class LedgerWindow(QObject):
             return {"ok": False, "message": "Архивът не е създаден. " + str(error)}
         return {"ok": True, "message": "Архивът е създаден."}
 
-    @Slot(QUrl, result="QVariantMap")
-    def restoreArchive(self, url):
+    @Slot(QUrl, str, result="QVariantMap")
+    def restoreArchive(self, url, administrator_password=""):
+        if self._session_enabled and self._verify_admin is None:
+            return {"ok": False, "message": "Само администраторът може да възстанови архив."}
         if not url.isLocalFile():
             return {"ok": False, "message": "Избери локален архив."}
         try:
+            if self._session_enabled and not self._verify_admin(administrator_password):
+                return {"ok": False, "message": "Грешна парола на администратора."}
             safety = self._ledger.restore(Path(url.toLocalFile()))
         except ValidationError as error:
             return {"ok": False, "message": str(error)}
@@ -330,11 +352,11 @@ class LedgerWindow(QObject):
                 "message": f"Архивът е възстановен. Предишната база е запазена в {safety.name}. {refresh_error}"}
 
 def make_window(database: Path, *, demo: bool = False, preferences: Preferences | None = None,
-                session_enabled: bool = False, visible: bool = True):
+                session_enabled: bool = False, visible: bool = True, verify_admin=None):
     if QQuickStyle.name() != "Basic":
         QQuickStyle.setStyle("Basic")
     engine = QQmlApplicationEngine()
-    controller = LedgerWindow(database, engine)
+    controller = LedgerWindow(database, engine, session_enabled=session_enabled, verify_admin=verify_admin)
     preferences = preferences or Preferences(database.parent / "settings.ini", engine)
     updates = WindowsUpdates(database.parent / "updates", engine)
     engine.setInitialProperties({

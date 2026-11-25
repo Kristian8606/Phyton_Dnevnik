@@ -82,6 +82,36 @@ class DesktopTests(unittest.TestCase):
             finally:
                 reopened.rootObjects()[0].close()
 
+    def test_revision_tab_shows_the_current_cash_and_preserves_the_draft(self):
+        app = QGuiApplication.instance() or QGuiApplication([])
+        with TemporaryDirectory() as temporary:
+            database = Path(temporary) / "ledger.sqlite3"
+            Ledger(database).save(date.today(), {"income": "1225"})
+            engine, controller = make_window(database)
+            window = engine.rootObjects()[0]
+            try:
+                app.processEvents()
+                root = window.contentItem()
+                draft = visual_item(root, "entry_income")
+                draft.setProperty("text", "50")
+
+                def click(name):
+                    item = visual_item(root, name)
+                    point = item.mapToScene(QPointF(item.width() / 2, item.height() / 2))
+                    QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                                     point.toPoint())
+                    app.processEvents()
+
+                click("revisionsTab")
+                self.assertTrue(window.property("showingRevisions"))
+                closing = visual_item(root, "revision_closing")
+                self.assertEqual(closing.property("value") + " €", controller.summary["cash"])
+                click("operationsTab")
+                self.assertFalse(window.property("showingRevisions"))
+                self.assertEqual(draft.property("text"), "50")
+            finally:
+                window.close()
+
     def test_save_shares_the_receipts_bar_and_writes_the_entry(self):
         app = QGuiApplication.instance() or QGuiApplication([])
         with TemporaryDirectory() as temporary:

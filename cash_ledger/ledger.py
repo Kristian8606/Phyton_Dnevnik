@@ -421,6 +421,30 @@ class Ledger:
                 _convert_opening_cash(destination)
         return safety
 
+    def revision_totals(self, day: date) -> dict[str, int]:
+        params = {"day": day.isoformat(), "sale": SALE}
+        with self._connection() as db:
+            db.execute("BEGIN")
+            totals = dict(db.execute("""
+                WITH contracts_totals AS (
+                    SELECT COALESCE(SUM(interest), 0) AS profit,
+                           COALESCE(SUM(weight) FILTER (WHERE marker = :sale AND weight_kind = 'gold'), 0) AS sold_gold,
+                           COALESCE(SUM(weight) FILTER (WHERE marker = :sale AND weight_kind = 'newGold'), 0) AS sold_new_gold,
+                           COALESCE(SUM(weight) FILTER (WHERE marker = :sale AND weight_kind = 'silver'), 0) AS sold_silver,
+                           COALESCE(SUM(weight) FILTER (WHERE marker = :sale AND weight_kind = 'newSilver'), 0) AS sold_new_silver
+                    FROM contracts WHERE day <= :day
+                ), cash_totals AS (
+                    SELECT COALESCE(SUM(income), 0) AS income, COALESCE(SUM(cost), 0) AS cost
+                    FROM cash_movements WHERE day <= :day
+                ), purchase_totals AS (
+                    SELECT COALESCE(SUM(gold), 0) AS bought_gold, COALESCE(SUM(silver), 0) AS bought_silver
+                    FROM purchases WHERE day <= :day
+                )
+                SELECT * FROM contracts_totals CROSS JOIN cash_totals CROSS JOIN purchase_totals
+            """, params).fetchone())
+            totals["closing"] = db.execute(BALANCE_SQL, params).fetchone()[0]
+        return totals
+
     def cash_by_day(self, last_day: date) -> list[CashDay]:
         end = last_day.toordinal()
         start = max(1, end - 6)

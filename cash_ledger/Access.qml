@@ -8,7 +8,7 @@ ApplicationWindow {
     required property QtObject preferences
 
     width: 560
-    height: 495
+    height: 515
     minimumWidth: 340
     minimumHeight: 460
     title: "Дневник"
@@ -16,6 +16,7 @@ ApplicationWindow {
 
     readonly property bool registering: session !== null && session.registering
     readonly property bool addingUser: session !== null && session.addingUser
+    readonly property bool needsAdministrator: session !== null && session.administratorPasswordRequired
     readonly property string theme: preferences ? preferences.theme : "system"
     readonly property bool dark: theme === "dark"
                                  || (theme === "system"
@@ -28,12 +29,14 @@ ApplicationWindow {
 
     palette.text: ink
     palette.windowText: ink
+    palette.buttonText: ink
+    palette.button: paper
     palette.base: paper
     palette.highlight: accent
     palette.highlightedText: accentText
 
     function submit() {
-        const problem = session.submit(username.text, password.text, verification.text)
+        const problem = session.submit(username.text, password.text, verification.text, administratorPassword.text)
         errorText.text = problem
         if (!problem)
             clearForm()
@@ -43,6 +46,7 @@ ApplicationWindow {
         username.clear()
         password.clear()
         verification.clear()
+        administratorPassword.clear()
         errorText.text = ""
         username.forceActiveFocus()
     }
@@ -123,6 +127,15 @@ ApplicationWindow {
                 maximumLength: 4
                 inputMethodHints: Qt.ImhDigitsOnly
                 echoMode: TextInput.Password
+                onAccepted: access.needsAdministrator ? administratorPassword.forceActiveFocus() : access.submit()
+            }
+            AccountField {
+                id: administratorPassword
+                objectName: "administratorPassword"
+                placeholderText: "Парола на администратора"
+                visible: access.needsAdministrator
+                maximumLength: 512
+                echoMode: TextInput.Password
                 onAccepted: access.submit()
             }
             Label {
@@ -155,11 +168,18 @@ ApplicationWindow {
                 }
             }
             Button {
-                visible: access.addingUser
+                objectName: "registrationButton"
+                visible: !access.registering || access.addingUser
                 Layout.alignment: Qt.AlignHCenter
-                text: "Отказ"
+                text: access.addingUser ? "Назад" : "Регистрация"
                 flat: true
-                onClicked: access.session.cancelRegistration()
+                onClicked: {
+                    if (access.addingUser)
+                        access.session.cancelRegistration()
+                    else
+                        access.session.add_user()
+                    access.clearForm()
+                }
             }
         }
     }

@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from PySide6.QtCore import QObject, QPointF, Qt
+from PySide6.QtCore import QObject, QPointF, Qt, QUrl
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtTest import QTest
 
@@ -32,11 +32,15 @@ class SessionTests(unittest.TestCase):
             self.assertIsNotNone(result, name)
             return result
 
-        def submit(username, password, verification=""):
+        def submit(username, password, verification="", administrator_password=""):
             field("loginUsername").setProperty("text", username)
             field("loginPassword").setProperty("text", password)
             field("registrationCode").setProperty("text", verification)
-            button = field("accountSubmitButton")
+            field("administratorPassword").setProperty("text", administrator_password)
+            click("accountSubmitButton")
+
+        def click(name):
+            button = field(name)
             point = button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
             QTest.mouseClick(gate, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, point.toPoint())
             app.processEvents()
@@ -51,20 +55,31 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(opens, [database])
             self.assertFalse(gate.isVisible())
 
-            session.add_user()
-            self.assertTrue(gate.isVisible())
-            submit("Втори", "different-pass", "0000")
-            self.assertFalse(gate.isVisible())
-            self.assertEqual(opens, [database])
+            admin = session._work_engine.rootObjects()[0].property("controller")
+            self.assertTrue(admin.isAdministrator)
+            self.assertIn("Грешна парола", admin.restoreArchive(QUrl.fromLocalFile(str(database)), "wrong")["message"])
 
             session.sign_out()
             app.processEvents()
             self.assertTrue(gate.isVisible())
             self.assertFalse(field("registrationCode").property("visible"))
+            click("registrationButton")
+            self.assertTrue(field("administratorPassword").property("visible"))
+            submit("Втори", "different-pass", "0000", "wrong")
+            self.assertEqual(opens, [database])
+            self.assertIn("администратора", field("loginError").property("text"))
+            submit("Втори", "different-pass", "0000", "test-secret")
+            self.assertTrue(gate.isVisible())
+            self.assertFalse(field("registrationCode").property("visible"))
+            self.assertEqual(opens, [database])
             submit("Касиер", "wrong")
             self.assertEqual(opens, [database])
             submit("Втори", "different-pass")
             self.assertEqual(opens, [database, database])
+            member = session._work_engine.rootObjects()[0].property("controller")
+            self.assertFalse(member.isAdministrator)
+            result = member.restoreArchive(QUrl.fromLocalFile(str(database)), "test-secret")
+            self.assertIn("Само администраторът", result["message"])
             self.assertEqual(Ledger(database).day(date.today()).summary["cash"], 2500)
         finally:
             session.sign_out()

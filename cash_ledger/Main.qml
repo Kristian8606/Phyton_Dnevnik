@@ -11,6 +11,8 @@ ApplicationWindow {
     visible: true
     property bool testMode: false
     property bool sessionEnabled: false
+    property bool showingRevisions: false
+    property var revisionReport: ({})
     signal signOutRequested()
     signal registrationRequested()
     title: testMode ? "Дневник · Тестови дни" : "Дневник"
@@ -154,7 +156,13 @@ ApplicationWindow {
         })
     }
 
-    Shortcut { sequences: [StandardKey.Find]; onActivated: numberSearch.open() }
+    Shortcut {
+        sequences: [StandardKey.Find]
+        onActivated: {
+            win.showingRevisions = false
+            numberSearch.open()
+        }
+    }
 
     component LedgerText: Label {
         color: win.ink
@@ -241,9 +249,25 @@ ApplicationWindow {
                 color: win.accent
                 font.weight: Font.DemiBold
             }
+            LedgerButton {
+                objectName: "operationsTab"
+                text: "Операции"
+                highlighted: !win.showingRevisions
+                onClicked: win.showingRevisions = false
+            }
+            LedgerButton {
+                objectName: "revisionsTab"
+                text: "Ревизии"
+                highlighted: win.showingRevisions
+                onClicked: {
+                    win.revisionReport = win.controller.revisionReport()
+                    win.showingRevisions = true
+                }
+            }
             Item { Layout.fillWidth: true }
             LedgerButton {
                 objectName: "cashReportButton"
+                visible: !win.showingRevisions
                 text: "Каса по дни"
                 onClicked: {
                     const report = win.controller.cashReport()
@@ -290,6 +314,7 @@ ApplicationWindow {
                         }
                         MenuItem {
                             objectName: "restoreArchiveMenuItem"
+                            enabled: !win.sessionEnabled || (win.controller && win.controller.isAdministrator)
                             text: "Възстанови от архив…"
                             onTriggered: restorePicker.open()
                         }
@@ -300,6 +325,7 @@ ApplicationWindow {
                         onTriggered: updatesDialog.open()
                     }
                     MenuItem {
+                        enabled: win.controller && win.controller.isAdministrator
                         visible: win.sessionEnabled
                         text: "Нов потребител…"
                         onTriggered: win.registrationRequested()
@@ -322,6 +348,7 @@ ApplicationWindow {
 
     RowLayout {
         anchors.fill: parent
+        visible: !win.showingRevisions
         spacing: 0
 
         Rectangle {
@@ -840,6 +867,14 @@ ApplicationWindow {
         }
     }
 
+    Revisions {
+        anchors.fill: parent
+        anchors.margins: 16
+        visible: win.showingRevisions
+        report: win.revisionReport
+        tones: ({ink: win.ink, paper: win.paper, header: win.headerSurface, line: win.line})
+    }
+
     Dialog {
         id: signOutDialog
         anchors.centerIn: Overlay.overlay
@@ -1115,12 +1150,32 @@ ApplicationWindow {
         title: "Възстановяване от архив"
         width: 390
         property url archive
+        onOpened: {
+            restoreError.text = ""
+            if (win.sessionEnabled)
+                restorePassword.forceActiveFocus()
+        }
+        onClosed: restorePassword.clear()
         contentItem: ColumnLayout {
             spacing: 10
             LedgerText {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 text: "Архивът ще замени текущите записи. Текущата база ще се запази в отделен архив преди възстановяването."
+            }
+            TextField {
+                id: restorePassword
+                visible: win.sessionEnabled
+                Layout.fillWidth: true
+                placeholderText: "Парола на администратора"
+                echoMode: TextInput.Password
+            }
+            LedgerText {
+                id: restoreError
+                visible: text.length > 0
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                color: win.warningColor
             }
             RowLayout {
                 Layout.fillWidth: true
@@ -1130,7 +1185,11 @@ ApplicationWindow {
                     text: "Възстанови"
                     primary: true
                     onClicked: {
-                        const result = win.controller.restoreArchive(restoreConfirm.archive)
+                        const result = win.controller.restoreArchive(restoreConfirm.archive, restorePassword.text)
+                        if (!result.ok) {
+                            restoreError.text = result.message
+                            return
+                        }
                         restoreConfirm.close()
                         win.showResult(result)
                     }

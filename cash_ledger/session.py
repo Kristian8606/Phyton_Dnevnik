@@ -24,6 +24,7 @@ class DesktopSession(QObject):
         self._demo = demo
         self._show_windows = show_windows
         self._adding_user = False
+        self._administrator = False
         self._work_engine = None
         self._access_engine = QQmlApplicationEngine(self)
 
@@ -47,22 +48,27 @@ class DesktopSession(QObject):
     def addingUser(self):
         return self._adding_user
 
-    @Slot(str, str, str, result=str)
-    def submit(self, username, password, code):
+    @Property(bool, notify=formChanged)
+    def administratorPasswordRequired(self):
+        return self.registering and self._has_users
+
+    @Slot(str, str, str, str, result=str)
+    def submit(self, username, password, code, administrator_password=""):
         if self._work_engine is not None and not self._adding_user:
             return ""
         try:
             if self.registering:
-                self._accounts.register(username, password, code, first_only=self._work_engine is None)
+                self._accounts.register(username, password, code, administrator_password=administrator_password)
+                self._has_users = True
                 if self._adding_user:
                     self.cancelRegistration()
                     return ""
-                self._has_users = True
                 self.formChanged.emit()
             elif not self._accounts.authenticate(username, password):
                 return "Грешно потребителско име или парола."
+            administrator = self._accounts.is_administrator(username)
         except AccountError as exc:
-            if self._work_engine is None and not self._has_users:
+            if not self._has_users:
                 self._has_users = self._accounts.has_users()
                 self.formChanged.emit()
             return str(exc)
@@ -74,12 +80,14 @@ class DesktopSession(QObject):
             engine, controller = make_window(
                 database, demo=self._demo, preferences=self._preferences,
                 session_enabled=True, visible=self._show_windows,
+                verify_admin=(lambda secret: self._accounts.authenticate(username, secret)) if administrator else None,
             )
         except (OSError, sqlite3.Error) as exc:
             return f"Дневникът не можа да се отвори. {exc}"
         if not engine.rootObjects():
             return "Дневникът не можа да се отвори."
         self._work_engine = engine
+        self._administrator = administrator
         window = engine.rootObjects()[0]
         window.signOutRequested.connect(self.sign_out)
         window.registrationRequested.connect(self.add_user)
@@ -88,21 +96,23 @@ class DesktopSession(QObject):
 
     @Slot()
     def add_user(self):
-        if self._work_engine is None:
+        if self._adding_user or (self._work_engine is not None and not self._administrator):
             return
         self._adding_user = True
         self.formChanged.emit()
         self._access_engine.rootObjects()[0].show()
-        self._work_engine.rootObjects()[0].hide()
+        if self._work_engine is not None:
+            self._work_engine.rootObjects()[0].hide()
 
     @Slot()
     def cancelRegistration(self):
-        if not self._adding_user or self._work_engine is None:
+        if not self._adding_user:
             return
         self._adding_user = False
         self.formChanged.emit()
-        self._work_engine.rootObjects()[0].show()
-        self._access_engine.rootObjects()[0].hide()
+        if self._work_engine is not None:
+            self._work_engine.rootObjects()[0].show()
+            self._access_engine.rootObjects()[0].hide()
 
     @Slot()
     def sign_out(self):
@@ -110,5 +120,6 @@ class DesktopSession(QObject):
             return
         self._access_engine.rootObjects()[0].show()
         engine, self._work_engine = self._work_engine, None
+        self._administrator = False
         engine.rootObjects()[0].close()
         engine.deleteLater()
