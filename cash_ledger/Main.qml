@@ -64,10 +64,10 @@ ApplicationWindow {
     readonly property color priceColor: dark ? "#a0b5cc" : "#637a92"
     readonly property real baseWidth: controller.widths.reduce((total, width) => total + width, 0)
     readonly property var groups: [
-        {label: "Договори и продажби", first: 0, count: 8},
-        {label: "Приход / разход", first: 8, count: 2},
-        {label: "Залози", first: 10, count: 2},
-        {label: "Покупки", first: 12, count: 2}
+        {label: "Д.П.", first: 0, count: 8},
+        {label: "П. / Р.", first: 8, count: 2},
+        {label: "З.", first: 10, count: 2},
+        {label: "П.", first: 12, count: 2}
     ]
     readonly property var enterFields: [3, 4, 5, 6, 7, 8, 9, 11, 12, 13]
     property string weightProblem: ""
