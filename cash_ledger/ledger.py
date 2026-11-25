@@ -652,7 +652,7 @@ class Ledger:
         dated_rows = [(date.fromisoformat(day), row) for day, blocks in sorted(records.items())
                       for row in _table_rows(blocks)[0]]
         totals = _operation_totals([row for _, row in dated_rows])
-        totals.update(cash=balance, carried=balance - totals["net"])
+        totals["cash"] = balance
         return dated_rows, totals
 
     def find_number(self, query: str) -> list[NumberMatch]:

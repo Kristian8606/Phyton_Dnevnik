@@ -230,24 +230,29 @@ class DesktopTests(unittest.TestCase):
                                      point.toPoint())
                     app.processEvents()
 
+                draft = visual_item(root, "entry_income")
+                draft.setProperty("text", "12")
                 click("printTab")
                 self.assertFalse(visual_item(root, "saveOperationButton").property("visible"))
                 self.assertIsNone(visual_item(root, "exportOperationsPdfButton"))
                 self.assertTrue(visual_item(root, "printTodayOption").property("checked"))
+                with patch("cash_ledger.desktop.print_table", return_value=False):
+                    click("printOperationsButton")
+                    self.assertTrue(visual_item(root, "printScreen").property("visible"))
                 with patch("cash_ledger.desktop.print_table", return_value=True) as print_table:
                     click("printOperationsButton")
                     columns, rows, overview = print_table.call_args.args
                     self.assertEqual(columns[0].heading, "Пр.")
                     self.assertEqual(len(rows), 1)
                     self.assertIn(("60,00", "", "днес"), rows[0])
-                    self.assertEqual(dict(overview[0]), {
-                        "Дата": today.strftime("%d.%m.%Y"), "Пренос от предния ден": "525,00 €",
-                        "Каса към датата": "610,00 €",
-                    })
-                    self.assertEqual(dict(overview[1]), {
+                    self.assertEqual(dict(overview), {
+                        "Дата": today.strftime("%d.%m.%Y"), "Каса": "610,00 €",
                         "Печалба": "10,00 €", "Откуп": "20,00 €", "Залози": "5,00 €", "Лихви": "10,00 €",
                     })
 
+                    self.assertTrue(visual_item(root, "saveOperationButton").property("visible"))
+                    self.assertEqual(draft.property("text"), "12")
+                    click("printTab")
                     click("printPeriodOption")
                     click("printFirstDate")
                     if previous.month != today.month:
@@ -260,11 +265,11 @@ class DesktopTests(unittest.TestCase):
                     self.assertEqual([row[0][0] for row in rows],
                                      [previous.strftime("%d.%m.%Y"), today.strftime("%d.%m.%Y")])
                     self.assertIn(("125,00", "", "първи ден"), rows[0])
-                    self.assertEqual(dict(overview[0])["Пренос в началото"], "400,00 €")
-                    self.assertEqual(dict(overview[0])["Каса в края"], "610,00 €")
+                    self.assertNotIn("Пренос в началото", dict(overview))
+                    self.assertEqual(dict(overview)["Каса"], "610,00 €")
                     self.assertEqual(controller.dateIso, today.isoformat())
+                    self.assertFalse(visual_item(root, "printScreen").property("visible"))
 
-                click("operationsTab")
                 click("printTab")
                 self.assertTrue(visual_item(root, "printTodayOption").property("checked"))
                 target = directory / "таблица.pdf"

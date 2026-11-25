@@ -18,16 +18,13 @@ class PrintColumn:
 
 
 def _overview_markup(overview, column_count):
-    lines = []
-    for row in overview:
-        span, extra = divmod(column_count, len(row))
-        cells = "".join(
-            f'<td colspan="{span + (index < extra)}" bgcolor="#f3f5f7">'
-            f'{escape(label)}&nbsp;&nbsp;<b>{escape(value)}</b></td>'
-            for index, (label, value) in enumerate(row)
-        )
-        lines.append(f"<tr>{cells}</tr>")
-    return "".join(lines)
+    span, extra = divmod(column_count, len(overview))
+    cells = "".join(
+        f'<td colspan="{span + (index < extra)}" bgcolor="#f3f5f7">'
+        f'{escape(label)}&nbsp;&nbsp;<b>{escape(value)}</b></td>'
+        for index, (label, value) in enumerate(overview)
+    )
+    return f"<tr>{cells}</tr>"
 
 
 def _table_markup(columns, rows, overview, page_width):
@@ -67,7 +64,7 @@ def _table_markup(columns, rows, overview, page_width):
             cells.append(f'<td align="{"right" if column.numeric else "left"}">{content}</td>')
         body.append("<tr>" + "".join(cells) + "</tr>")
     header = ('<body style="font-family:Arial,sans-serif;font-size:9px;color:#18212a;">'
-              '<table border="1" cellspacing="0" cellpadding="4" width="100%" style="border-color:#a4aeb8;">'
+              '<table border="1" cellspacing="0" cellpadding="2" width="100%" style="border-color:#a4aeb8;">'
               f"<thead>{_overview_markup(overview, len(columns))}<tr>{headings}</tr></thead><tbody>")
     return header, body
 

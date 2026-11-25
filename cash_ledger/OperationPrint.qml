@@ -11,6 +11,7 @@ Item {
     property string lastDate: controller.todayIso
     property bool choosingStart: true
     property var result: ({})
+    signal printSent(string message)
 
     readonly property string first: period.checked ? firstDate : ""
     readonly property string last: period.checked ? lastDate : ""
@@ -131,7 +132,12 @@ Item {
                 text: "Печат…"
                 primary: true
                 enabled: view.validRange
-                onClicked: view.result = view.controller.printOperations(view.first, view.last)
+                onClicked: {
+                    const outcome = view.controller.printOperations(view.first, view.last)
+                    view.result = outcome
+                    if (outcome.printed)
+                        view.printSent(outcome.message)
+                }
             }
         }
     }

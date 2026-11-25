@@ -248,14 +248,12 @@ class LedgerWindow(QObject):
             rows.append(cells)
         if first == last:
             period = ("Дата", first.strftime("%d.%m.%Y"))
-            carried_label, cash_label = "Пренос от предния ден", "Каса към датата"
         else:
             period = ("Период", f"{first:%d.%m.%Y} – {last:%d.%m.%Y}")
-            carried_label, cash_label = "Пренос в началото", "Каса в края"
         overview = (
-            (period, (carried_label, money(totals["carried"])), (cash_label, money(totals["cash"]))),
-            (("Печалба", money(totals["profit"])), ("Откуп", money(totals["redemption"])),
-             ("Залози", money(totals["pledges"])), ("Лихви", money(totals["interest"]))),
+            period, ("Каса", money(totals["cash"])), ("Печалба", money(totals["profit"])),
+            ("Откуп", money(totals["redemption"])), ("Залози", money(totals["pledges"])),
+            ("Лихви", money(totals["interest"])),
         )
         return columns, rows, overview
 
@@ -266,7 +264,8 @@ class LedgerWindow(QObject):
             printed = print_table(columns, rows, overview)
         except (ValidationError, OSError, sqlite3.Error) as error:
             return {"ok": False, "message": str(error)}
-        return {"ok": True, "message": "Таблицата е изпратена за печат." if printed else ""}
+        return {"ok": True, "printed": printed,
+                "message": "Таблицата е изпратена за печат." if printed else ""}
 
     @Property(bool, constant=True)
     def isAdministrator(self):

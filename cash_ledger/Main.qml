@@ -881,6 +881,10 @@ ApplicationWindow {
         controller: win.controller
         tones: win.calendarTones
         warningColor: win.warningColor
+        onPrintSent: message => {
+            navigationTabs.setCurrentIndex(0)
+            win.showResult({ok: true, message: message})
+        }
     }
 
     Revisions {
