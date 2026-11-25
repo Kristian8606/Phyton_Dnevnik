@@ -34,15 +34,23 @@ class RevisionTests(unittest.TestCase):
         end = date(2026, 11, 25)
         morning = end - timedelta(days=1)
         with TemporaryDirectory() as temporary:
-            path = Path(temporary) / "ledger.sqlite3"
-            ledger = Ledger(path)
+            root = Path(temporary)
+            path = root / "dnevnik.sqlite3"
+            archives = root / "Архиви"
+            ledger = Ledger(path, archive_directory=archives)
             ledger.save(morning, {"income": "1225", "contract": "0404", "interest": "5", "principal": "0"})
             ledger.save(end, {"cost": "55"})
             report = ledger.revision_snapshot(end)
             self.assertEqual(report.operation_count, 3)
             backup = ledger.close_revision(report)
             self.assertTrue(backup.is_file())
-            self.assertEqual(len(Ledger(backup).day(morning).rows), 1)
+            self.assertEqual(backup, archives / "Автоматичен архив.sqlite3")
+            archived = Ledger(backup)
+            self.assertEqual(archived.day(morning).rows, [])
+            self.assertEqual(archived.day(end).rows, [])
+            self.assertEqual(archived.day(end).carried_cash, 117500)
+            self.assertEqual(archived.revision_history()[0].totals, report.totals)
+            self.assertEqual(list(archives.iterdir()), [backup])
             self.assertEqual(ledger.day(end).rows, [])
             self.assertEqual(ledger.day(end).carried_cash, 117500)
             self.assertEqual(ledger.revision_totals(end)["income"], 0)
@@ -54,11 +62,15 @@ class RevisionTests(unittest.TestCase):
             ledger.save(end, {"income": "25"})
             second = ledger.revision_snapshot(end)
             self.assertEqual(second.totals["closing"], 120000)
-            ledger.close_revision(second)
+            self.assertEqual(ledger.close_revision(second), backup)
             reopened = Ledger(path)
             self.assertEqual([row.totals["closing"] for row in reopened.revision_history()], [120000, 117500])
             self.assertEqual(reopened.day(end).carried_cash, 120000)
             self.assertEqual(reopened.day(end + timedelta(days=1)).carried_cash, 120000)
+            archived = Ledger(backup)
+            self.assertEqual(archived.day(end).rows, [])
+            self.assertEqual(archived.revision_history(), reopened.revision_history())
+            self.assertEqual(list(archives.iterdir()), [backup])
 
     def test_automatic_backup_prefers_the_program_folder_and_falls_back_if_unavailable(self):
         end = date(2026, 11, 25)
@@ -90,9 +102,16 @@ class RevisionTests(unittest.TestCase):
             with self.assertRaises(ValidationError):
                 ledger.close_revision(saved)
             current = ledger.revision_snapshot(end)
+            archive = ledger.automatic_archive_path()
+            ledger.backup(archive)
+            previous = archive.read_bytes()
             with patch.object(ledger, "backup", side_effect=OSError("backup failure")):
                 with self.assertRaises(OSError):
                     ledger.close_revision(current)
+            with patch.object(Path, "replace", side_effect=OSError("cannot replace archive")):
+                with self.assertRaises(OSError):
+                    ledger.close_revision(current)
+            self.assertEqual(archive.read_bytes(), previous)
             self.assertEqual(ledger.revision_history(), [])
             self.assertEqual(ledger.revision_snapshot(end), current)
 
@@ -107,9 +126,7 @@ class RevisionTests(unittest.TestCase):
             with closing(sqlite3.connect(old_archive)) as db, db:
                 db.execute("DROP TABLE revisions")
                 db.execute("PRAGMA user_version = 1")
-            ledger.close_revision(ledger.revision_snapshot(end))
-            current_archive = directory / "current.sqlite3"
-            ledger.backup(current_archive)
+            current_archive = ledger.close_revision(ledger.revision_snapshot(end))
             ledger.restore(old_archive)
             self.assertEqual(ledger.revision_history(), [])
             self.assertEqual(ledger.day(end).summary["cash"], 5000)

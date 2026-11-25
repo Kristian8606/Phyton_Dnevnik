@@ -9,10 +9,13 @@ from itertools import zip_longest
 import os
 from pathlib import Path
 import re
+from shutil import copyfile
 import sqlite3
+from tempfile import TemporaryDirectory
 from typing import Mapping
 
 SALE = "--||--"
+AUTOMATIC_ARCHIVE_NAME = "Автоматичен архив.sqlite3"
 SALE_MARKERS = (SALE, "1", "-")
 WEIGHTS = ("gold", "newGold", "silver", "newSilver")
 CONTRACT_FIELDS = ("marker", "contract", "interest", "principal", *WEIGHTS)
@@ -480,6 +483,11 @@ class Ledger:
         self._archive_fallback.mkdir(mode=0o700, parents=True, exist_ok=True)
         return self._archive_fallback
 
+    def automatic_archive_path(self) -> Path:
+        filename = (AUTOMATIC_ARCHIVE_NAME if self.path.name == "dnevnik.sqlite3"
+                    else f"{self.path.stem} – автоматичен архив.sqlite3")
+        return self.archive_directory() / filename
+
     def _safety_backup(self, action: str, when: datetime) -> Path:
         stamp = when.strftime("%Y%m%d-%H%M%S-%f")
         name = f"{self.path.stem}-before-{action}-{stamp}.sqlite3"
@@ -587,6 +595,19 @@ class Ledger:
             latest = _latest_revision(db)
             return date.fromisoformat(latest["day"]) if latest else None
 
+    @staticmethod
+    def _record_closed_period(db: sqlite3.Connection, current: RevisionSnapshot, closed_at: datetime) -> None:
+        day = current.day.isoformat()
+        labels = ", ".join(REVISION_FIELDS)
+        placeholders = ", ".join("?" for _ in REVISION_FIELDS)
+        db.execute(
+            f"INSERT INTO revisions (day, closed_at, operation_count, {labels}) VALUES (?, ?, ?, {placeholders})",
+            (day, closed_at.isoformat(timespec="seconds"), current.operation_count,
+             *(current.totals[key] for key in REVISION_FIELDS)),
+        )
+        for block in BLOCKS:
+            db.execute(f"DELETE FROM {block} WHERE day <= ?", (day,))
+
     def close_revision(self, preview: RevisionSnapshot) -> Path:
         with self._connection() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -597,18 +618,31 @@ class Ledger:
                 raise ValidationError("Няма операции за приключване.")
 
             closed_at = datetime.now().astimezone()
-            safety = self._safety_backup("revision", closed_at)
+            archive = self.automatic_archive_path()
+            with TemporaryDirectory(prefix=".dnevnik-period-", dir=archive.parent) as staging:
+                snapshot = Path(staging) / "snapshot.sqlite3"
+                self.backup(snapshot)
+                with closing(sqlite3.connect(snapshot)) as copied, copied:
+                    self._record_closed_period(copied, current, closed_at)
+                    if copied.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+                        raise sqlite3.DatabaseError("Копието на дневника не премина проверката.")
 
-            labels = ", ".join(REVISION_FIELDS)
-            placeholders = ", ".join("?" for _ in REVISION_FIELDS)
-            db.execute(
-                f"INSERT INTO revisions (day, closed_at, operation_count, {labels}) VALUES (?, ?, ?, {placeholders})",
-                (current.day.isoformat(), closed_at.isoformat(timespec="seconds"), current.operation_count,
-                 *(current.totals[key] for key in REVISION_FIELDS)),
-            )
-            for block in BLOCKS:
-                db.execute(f"DELETE FROM {block} WHERE day <= ?", (current.day.isoformat(),))
-        return safety
+                self._record_closed_period(db, current, closed_at)
+                previous = Path(staging) / "previous.sqlite3"
+                if archive.is_file():
+                    copyfile(archive, previous)
+                    previous.chmod(0o600)
+                # A failed archive replacement rolls back the live transaction.
+                snapshot.replace(archive)
+                try:
+                    db.commit()
+                except BaseException:
+                    if previous.is_file():
+                        previous.replace(archive)
+                    else:
+                        archive.unlink(missing_ok=True)
+                    raise
+        return archive
 
     def cash_by_day(self, last_day: date) -> list[CashDay]:
         end = last_day.toordinal()

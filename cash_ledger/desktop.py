@@ -12,7 +12,7 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from .ledger import BLOCKS, Ledger, MONETARY, SEARCH_LIMIT, ValidationError, WEIGHTS, weight_error
 
 from .preferences import Preferences
-from .snapshots import AUTOMATIC_ARCHIVE_NAME, replace_archive
+from .snapshots import replace_archive
 from .table_print import PrintColumn, print_table
 from .updates import WindowsUpdates
 
@@ -308,7 +308,7 @@ class LedgerWindow(QObject):
         try:
             if not self._verify_admin(administrator_username, administrator_password):
                 return {"ok": False, "message": "Въведи правилните име и парола на администратора."}
-            archive = self._ledger.close_revision(self._revision_preview)
+            self._ledger.close_revision(self._revision_preview)
         except ValidationError as error:
             self._revision_preview = None
             return {"ok": False, "message": str(error)}
@@ -317,7 +317,7 @@ class LedgerWindow(QObject):
         self._revision_preview = None
         self._editing = None
         refresh_error = self._select(date.today())
-        return {"ok": True, "message": f"Ревизията е записана. Резервно копие: {archive.name}. {refresh_error}".strip()}
+        return {"ok": True, "message": f"Ревизията е записана. Автоматичният архив е обновен. {refresh_error}".strip()}
 
     @Slot(str, result="QVariantMap")
     def findNumber(self, query):
@@ -362,23 +362,17 @@ class LedgerWindow(QObject):
     def draftWeightError(self, fields):
         return weight_error(fields)
 
-    def _automatic_archive(self) -> Path:
-        database = self._ledger.path
-        filename = (AUTOMATIC_ARCHIVE_NAME if database.name == "dnevnik.sqlite3"
-                    else f"{database.stem} – автоматичен архив.sqlite3")
-        return self._ledger.archive_directory() / filename
-
     @Slot(result=QUrl)
     def automaticArchive(self):
         try:
-            archive = self._automatic_archive()
+            archive = self._ledger.automatic_archive_path()
             return QUrl.fromLocalFile(str(archive)) if archive.is_file() else QUrl()
         except OSError:
             return QUrl()
 
     def _archive_saved_operations(self) -> str:
         try:
-            replace_archive(self._ledger.path, self._automatic_archive())
+            replace_archive(self._ledger.path, self._ledger.automatic_archive_path())
         except (OSError, sqlite3.Error):
             return "Не можа да се създаде копие на базата след тази операция."
         return ""

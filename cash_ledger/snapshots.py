@@ -7,10 +7,7 @@ from stat import S_ISREG
 from tempfile import TemporaryDirectory
 from time import monotonic
 
-from .ledger import BLOCKS
-
-
-AUTOMATIC_ARCHIVE_NAME = "Автоматичен архив.sqlite3"
+from .ledger import AUTOMATIC_ARCHIVE_NAME, BLOCKS
 
 
 def backup_before_update(data_directory: Path, archive_directory: Path) -> Path | None:

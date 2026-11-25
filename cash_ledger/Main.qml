@@ -959,7 +959,7 @@ ApplicationWindow {
             LedgerText {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: "Ще се създаде резервно копие, ще се запази обобщението и операциите от периода ще се изчистят."
+                text: "Операциите от периода ще се изчистят. Касата и обобщението ще се запазят, а автоматичният архив ще се обнови."
             }
             LedgerText {
                 Layout.fillWidth: true

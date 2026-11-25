@@ -169,7 +169,7 @@ class DesktopTests(unittest.TestCase):
                 self.assertEqual(store.day(date.today()).rows, [])
                 self.assertEqual(store.day(date.today()).carried_cash, 122500)
                 self.assertEqual(len(window.property("revisionReport")["history"]), 1)
-                self.assertIn("Резервно копие", window.property("revisionFeedback"))
+                self.assertIn("Автоматичният архив е обновен", window.property("revisionFeedback"))
                 self.assertFalse(visual_item(root, "closeRevisionButton").property("enabled"))
                 click("operationsTab")
                 self.assertEqual(controller.summary["carried"], "1\u00a0225,00 €")
