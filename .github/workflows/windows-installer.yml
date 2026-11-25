@@ -46,6 +46,8 @@ jobs:
           if (!$installer) { throw 'Installer file missing.' }
           $targetDir = Join-Path $env:RUNNER_TEMP 'ledger-install-check'
           $sqliteFile = Join-Path $env:LOCALAPPDATA 'Dnevnik\dnevnik.sqlite3'
+          $archiveDir = Join-Path $targetDir 'Архиви'
+          $backupFile = Join-Path $archiveDir 'Преди обновяване.sqlite3'
           $installArgs = @(
             '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', ('/DIR="' + $targetDir + '"')
           )
@@ -62,6 +64,8 @@ jobs:
           python -c "from cash_ledger.data_location import LEGACY_DIRECTORY_NAME; from cash_ledger.ledger import Ledger; from datetime import date; from pathlib import Path; import sys; Ledger(Path(sys.argv[1]) / LEGACY_DIRECTORY_NAME / 'cash-ledger.sqlite3').save(date.today(), {'income': '137'})" $env:LOCALAPPDATA
           if ($LASTEXITCODE -ne 0) { throw 'Could not seed the legacy test database.' }
           InstallAndCheck
+          python -c "from cash_ledger.ledger import Ledger; from datetime import date; from pathlib import Path; import sys; path = Path(sys.argv[1]); assert path.is_file(); assert Ledger(path).day(date.today()).summary['cash'] == 13700" $backupFile
+          if ($LASTEXITCODE -ne 0) { throw 'The installer did not archive the legacy data.' }
           python -c "from cash_ledger.data_location import default_database; from cash_ledger.ledger import Ledger; from datetime import date; from pathlib import Path; import sys; path = Path(sys.argv[1]); assert default_database(path.parent) == path and path.is_file(); ledger = Ledger(path); assert ledger.day(date.today()).summary['cash'] == 13700; ledger.save(date.today(), {'income': '23'})" $sqliteFile
           if ($LASTEXITCODE -ne 0) { throw 'Could not migrate the test database.' }
           $appPath = Join-Path $targetDir 'Dnevnik.exe'
@@ -86,6 +90,26 @@ jobs:
           }
           python -c "from cash_ledger.ledger import Ledger; from datetime import date; from pathlib import Path; import sys; assert Ledger(Path(sys.argv[1])).day(date.today()).summary['cash'] == 16000" $sqliteFile
           if ($LASTEXITCODE -ne 0) { throw 'The installation did not preserve the test records.' }
+          python -c "from cash_ledger.ledger import Ledger; from datetime import date; from pathlib import Path; import sys; path = Path(sys.argv[1]); assert path.is_file(); assert Ledger(path).day(date.today()).summary['cash'] == 16000" $backupFile
+          if ($LASTEXITCODE -ne 0) { throw 'The update did not replace the archive with the latest stored data.' }
+          $archives = @(Get-ChildItem -LiteralPath $archiveDir -Force)
+          if ($archives.Count -ne 1 -or $archives[0].FullName -ne $backupFile) {
+            throw 'The update left extra archive files behind.'
+          }
+          $archiveHash = (Get-FileHash -LiteralPath $backupFile).Hash
+          $applicationHash = (Get-FileHash -LiteralPath $appPath).Hash
+          $savedDb = "$sqliteFile.before-corruption-test"
+          Move-Item -LiteralPath $sqliteFile -Destination $savedDb
+          try {
+            Set-Content -LiteralPath $sqliteFile -Value 'invalid SQLite data'
+            $failedInstall = Start-Process -FilePath $installer.FullName -Wait -PassThru -ArgumentList $installArgs
+            if ($failedInstall.ExitCode -eq 0) { throw 'Setup continued without a valid archive.' }
+            if ((Get-FileHash -LiteralPath $backupFile).Hash -ne $archiveHash) { throw 'The previous archive changed.' }
+            if ((Get-FileHash -LiteralPath $appPath).Hash -ne $applicationHash) { throw 'Setup replaced the existing app.' }
+          }
+          finally {
+            Move-Item -LiteralPath $savedDb -Destination $sqliteFile -Force
+          }
       - uses: actions/upload-artifact@v6
         with:
           name: Dnevnik-windows-x64
@@ -105,7 +129,7 @@ jobs:
         with:
           name: Dnevnik-windows-x64
           path: installers
-      - name: Publish verified installer to private Releases
+      - name: Publish the verified installer
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -114,14 +138,29 @@ jobs:
           filename="Dnevnik-${TAG#v}-windows-x64.exe"
           installer="installers/$filename"
           test -s "$installer"
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,assets > release.json; then
-            if jq -e '.isDraft' release.json > /dev/null; then
-              gh release upload "$TAG" "$installer" --repo "$GITHUB_REPOSITORY" --clobber
-              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
-            else
-              jq -e --arg name "$filename" 'any(.assets[]; .name == $name)' release.json > /dev/null
-            fi
-          else
-            gh release create "$TAG" "$installer" --repo "$GITHUB_REPOSITORY" \
-              --verify-tag --title "Дневник ${TAG#v}" --notes "Windows x64 installer"
+          sha256="sha256:$(sha256sum "$installer" | cut -d' ' -f1)"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json apiUrl,isDraft > release.json; then
+            gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" > /dev/null
+            gh api --method POST "repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$TAG" -f name="Дневник ${TAG#v}" -f body="Windows x64 installer" -F draft=true || true
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json apiUrl,isDraft > release.json
+          fi
+          assets_api="$(jq -er '.apiUrl | sub("^https://api.github.com/"; "")' release.json)/assets"
+          verified_asset() {
+            gh api "$assets_api" | jq -e --arg name "$filename" --arg sha256 "$sha256" \
+              'any(.[]; .name == $name and .state == "uploaded" and .digest == $sha256)' > /dev/null
+          }
+          if ! verified_asset; then
+            jq -e '.isDraft' release.json > /dev/null
+            gh release upload "$TAG" "$installer" --repo "$GITHUB_REPOSITORY" --clobber || true
+            for delay in 2 5 10; do
+              if verified_asset; then
+                break
+              fi
+              sleep "$delay"
+            done
+            verified_asset
+          fi
+          if jq -e '.isDraft' release.json > /dev/null; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
           fi

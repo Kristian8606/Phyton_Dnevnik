@@ -20,6 +20,7 @@ RestartApplications=no
 WizardStyle=modern
 
 [Files]
+Source: "..\dist\DnevnikUpdateBackup.exe"; Flags: dontcopy
 Source: "..\dist\Dnevnik\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [InstallDelete]
@@ -71,4 +72,23 @@ begin
   end;
   if not Result then
     SuppressibleMsgBox('Затвори „Дневник“ и опитай да го обновиш отново.', mbError, MB_OK, IDOK);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ExitCode: Integer;
+  Arguments: String;
+begin
+  Result := '';
+  try
+    ExtractTemporaryFile('DnevnikUpdateBackup.exe');
+    Arguments := '"' + ExpandConstant('{localappdata}') + '" "' + ExpandConstant('{app}\Архиви') + '"';
+    if Exec(ExpandConstant('{tmp}\DnevnikUpdateBackup.exe'), Arguments, '', SW_HIDE,
+            ewWaitUntilTerminated, ExitCode) and (ExitCode = 0) then
+      Exit;
+    Log('Pre-update archive failed. Helper status: ' + IntToStr(ExitCode));
+  except
+    Log('Pre-update archive failed: ' + GetExceptionMessage);
+  end;
+  Result := 'Не можа да се създаде архив „Преди обновяване.sqlite3“. Обновяването е спряно.';
 end;

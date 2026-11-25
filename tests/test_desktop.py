@@ -178,8 +178,10 @@ class DesktopTests(unittest.TestCase):
     def test_save_remains_below_the_table_without_the_cash_summary(self):
         app = QGuiApplication.instance() or QGuiApplication([])
         with TemporaryDirectory() as temporary:
-            database = Path(temporary) / "ledger.sqlite3"
-            engine, controller = make_window(database)
+            directory = Path(temporary)
+            database = directory / "dnevnik.sqlite3"
+            archives = directory / "Архиви"
+            engine, controller = make_window(database, archive_directory=archives)
             try:
                 window: QQuickWindow = engine.rootObjects()[0]
                 window.resize(1350, 650)
@@ -199,6 +201,21 @@ class DesktopTests(unittest.TestCase):
                                  point.toPoint())
                 self.assertEqual(Ledger(database).day(date.today()).summary["cash"], 2500)
                 self.assertEqual(controller.summary["incoming"], "+25,00 €")
+                backup = archives / "Последни операции.sqlite3"
+                self.assertTrue(backup.is_file())
+                self.assertEqual(Ledger(backup).day(date.today()).summary["cash"], 2500)
+                operation_id = Ledger(database).day(date.today()).operation_ids[0]["cash_movements"]
+                self.assertTrue(controller.openEdit("cash_movements", str(operation_id))["ok"])
+                self.assertTrue(controller.saveEdit({"income": "35"})["ok"])
+                self.assertEqual(Ledger(backup).day(date.today()).summary["cash"], 3500)
+                self.assertEqual(list(archives.iterdir()), [backup])
+
+                with patch("cash_ledger.desktop.replace_archive", side_effect=OSError):
+                    result = controller.saveDraft({"income": "10"})
+                self.assertTrue(result["ok"])
+                self.assertTrue(result["warning"])
+                self.assertEqual(Ledger(database).day(date.today()).summary["cash"], 4500)
+                self.assertEqual(Ledger(backup).day(date.today()).summary["cash"], 3500)
             finally:
                 if engine.rootObjects():
                     engine.rootObjects()[0].close()

@@ -104,8 +104,7 @@ ApplicationWindow {
             return
         }
         const result = controller.saveDraft(draft())
-        statusMessage = result.message
-        statusError = !result.ok
+        showResult(result)
         if (!result.ok)
             return
 
@@ -127,7 +126,7 @@ ApplicationWindow {
     }
     function showResult(result) {
         statusMessage = result.message
-        statusError = !result.ok
+        statusError = !result.ok || Boolean(result.warning)
     }
     function openOperation(block, operationId, field) {
         const record = controller.openEdit(block, operationId)
@@ -1073,7 +1072,7 @@ ApplicationWindow {
         contentItem: ColumnLayout {
             spacing: 12
             LedgerText {
-                text: "Запази въведените операции, преди да продължиш. След обновяването „Дневник“ ще се отвори отново."
+                text: "Запази въведените операции, преди да продължиш. Инсталаторът ще направи архив, а след обновяването „Дневник“ ще се отвори отново."
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }

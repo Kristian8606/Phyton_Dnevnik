@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import sys
 
 from PyInstaller.__main__ import run
 
@@ -15,3 +16,10 @@ if __name__ == "__main__":
         "--noconfirm", "--workpath", str(ROOT / "build"), "--distpath", str(ROOT / "dist"),
         str(ROOT / "packaging" / "Dnevnik.spec"),
     ])
+    if sys.platform == "win32":
+        run([
+            "--noconfirm", "--onefile", "--name", "DnevnikUpdateBackup",
+            "--specpath", str(ROOT / "build"), "--paths", str(ROOT),
+            "--workpath", str(ROOT / "build" / "update-backup"), "--distpath", str(ROOT / "dist"),
+            str(ROOT / "packaging" / "backup_before_update.py"),
+        ])

@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from pathlib import Path
 import sqlite3
 
-from PySide6.QtCore import QByteArray, Property, QAbstractListModel, QLocale, QModelIndex, QObject, Qt, QUrl, Signal, Slot
+from PySide6.QtCore import QByteArray, Property, QAbstractListModel, QLocale, QLockFile, QModelIndex, QObject, Qt, QUrl, Signal, Slot
 from PySide6.QtGui import QFont, QFontMetrics
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -12,6 +12,7 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from .ledger import BLOCKS, Ledger, MONETARY, SEARCH_LIMIT, ValidationError, WEIGHTS, weight_error
 
 from .preferences import Preferences
+from .snapshots import OPERATIONS_ARCHIVE_NAME, replace_archive
 from .table_print import PrintColumn, print_table
 from .updates import WindowsUpdates
 
@@ -363,6 +364,23 @@ class LedgerWindow(QObject):
     def draftWeightError(self, fields):
         return weight_error(fields)
 
+    def _archive_saved_operations(self) -> str:
+        database = self._ledger.path
+        filename = (OPERATIONS_ARCHIVE_NAME if database.name == "dnevnik.sqlite3"
+                    else f"{database.stem} – последни операции.sqlite3")
+        try:
+            target = self._ledger.archive_directory() / filename
+            lock = QLockFile(str(target) + ".lock")
+            if not lock.tryLock(1500):
+                raise TimeoutError("Автоматичният архив е зает.")
+            try:
+                replace_archive(database, target)
+            finally:
+                lock.unlock()
+        except (OSError, sqlite3.Error):
+            return "Автоматичният архив не можа да се обнови."
+        return ""
+
     @Slot("QVariantMap", result="QVariantMap")
     def saveDraft(self, fields):
         try:
@@ -373,11 +391,11 @@ class LedgerWindow(QObject):
             return {"ok": False, "message": STORE_ERROR + str(error)}
 
         message = "Записана е 1 операция." if result.count == 1 else f"Записани са {result.count} операции."
+        archive_error = self._archive_saved_operations()
         refresh_error = self.goToday()
-        if refresh_error:
-            message += " " + refresh_error
         return {"ok": True, "cleared": list(result.cleared), "pledge": result.next_pledge or "",
-                "message": message}
+                "message": " ".join(filter(None, (message, archive_error, refresh_error))),
+                "warning": bool(archive_error or refresh_error)}
 
     @Slot(str, str, result="QVariantMap")
     def openEdit(self, block, operation_id):
@@ -414,8 +432,10 @@ class LedgerWindow(QObject):
         except sqlite3.Error as error:
             return {"ok": False, "message": STORE_ERROR + str(error)}
         self._editing = None
+        archive_error = self._archive_saved_operations()
         refresh_error = self._select(day)
-        return {"ok": True, "message": "Корекцията е записана. " + refresh_error}
+        return {"ok": True, "warning": bool(archive_error or refresh_error),
+                "message": " ".join(filter(None, ("Корекцията е записана.", archive_error, refresh_error)))}
 
     @Slot(result=QUrl)
     def archiveFolder(self):
