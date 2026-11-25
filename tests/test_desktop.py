@@ -119,7 +119,8 @@ class DesktopTests(unittest.TestCase):
             store = Ledger(database)
             store.save(date.today(), {"income": "1225"})
             engine, controller = make_window(
-                database, session_enabled=True, verify_admin=lambda password: password == "test-secret"
+                database, session_enabled=True, active_username="admin",
+                verify_admin=lambda username, password: (username, password) == ("admin", "test-secret")
             )
             window = engine.rootObjects()[0]
             try:
@@ -134,11 +135,18 @@ class DesktopTests(unittest.TestCase):
                     app.processEvents()
 
                 click("revisionsTab")
+                self.assertEqual(visual_item(root, "closeRevisionButton").property("text"), "Нов период")
                 click("closeRevisionButton")
+                username = visual_item(root, "revisionUsername")
+                self.assertIsNotNone(username)
                 password = visual_item(root, "revisionPassword")
-                password.setProperty("text", "wrong")
-                click("confirmCloseRevision")
-                self.assertEqual(len(store.day(date.today()).rows), 1)
+                for name, secret in (("друг", "test-secret"), ("admin", "wrong"), ("", "test-secret")):
+                    username.setProperty("text", name)
+                    password.setProperty("text", secret)
+                    click("confirmCloseRevision")
+                    self.assertEqual(len(store.day(date.today()).rows), 1)
+                    self.assertEqual(store.revision_history(), [])
+                username.setProperty("text", "admin")
                 password.setProperty("text", "test-secret")
                 click("confirmCloseRevision")
 

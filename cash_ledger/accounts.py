@@ -92,9 +92,11 @@ class LocalAccounts:
                 "SELECT 1 FROM administrator WHERE username_key = ?", (_username_key(username),)
             ).fetchone() is not None
 
-    def authenticate(self, username: str, password: str) -> bool:
+    def authenticate(self, username: str, password: str, *, administrator_only: bool = False) -> bool:
         with closing(sqlite3.connect(self._path)) as db:
-            record = db.execute(
-                "SELECT salt, password_hash FROM accounts WHERE username_key = ?", (_username_key(username),)
-            ).fetchone()
+            record = db.execute("""
+                SELECT salt, password_hash FROM accounts
+                WHERE username_key = :username AND
+                    (NOT :administrator_only OR username_key = (SELECT username_key FROM administrator))
+            """, {"username": _username_key(username), "administrator_only": administrator_only}).fetchone()
         return _matches(record, password)

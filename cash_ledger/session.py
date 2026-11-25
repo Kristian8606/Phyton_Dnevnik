@@ -79,11 +79,15 @@ class DesktopSession(QObject):
 
         try:
             database = self._database_for_session()
+
+            def verify_administrator(name, secret):
+                return self._accounts.authenticate(name, secret, administrator_only=True)
+
             engine, controller = make_window(
                 database, demo=self._demo, preferences=self._preferences,
                 session_enabled=True, visible=self._show_windows, active_username=username.strip(),
                 archive_directory=self._archive_directory,
-                verify_admin=(lambda secret: self._accounts.authenticate(username, secret)) if administrator else None,
+                verify_admin=verify_administrator if administrator else None,
             )
         except (OSError, sqlite3.Error) as exc:
             return f"Дневникът не можа да се отвори. {exc}"

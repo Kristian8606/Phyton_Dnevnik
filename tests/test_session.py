@@ -82,6 +82,8 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(journal.findChild(QObject, "activeUserLabel").property("text"), "Втори")
             member = journal.property("controller")
             self.assertFalse(member.isAdministrator)
+            member.revisionReport()
+            self.assertFalse(member.closeRevision("Касиер", "test-secret")["ok"])
             result = member.restoreArchive(QUrl.fromLocalFile(str(database)), "test-secret")
             self.assertIn("Само администраторът", result["message"])
             self.assertEqual(Ledger(database).day(date.today()).summary["cash"], 2500)

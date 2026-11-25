@@ -94,7 +94,7 @@ ColumnLayout {
             objectName: "closeRevisionButton"
             visible: view.administrator
             enabled: Boolean(view.report.ok) && view.report.operationCount > 0
-            text: "Приключи ревизия…"
+            text: "Нов период"
             padding: 9
             onClicked: view.closeRequested()
             contentItem: Label {

@@ -31,6 +31,8 @@ class AccountTests(unittest.TestCase):
         self.assertTrue(self.accounts.authenticate("втори", "sample-password"))
         self.assertTrue(self.accounts.is_administrator("ПЪРВИ"))
         self.assertFalse(self.accounts.is_administrator("втори"))
+        self.assertTrue(self.accounts.authenticate("ПЪРВИ", "sample-password", administrator_only=True))
+        self.assertFalse(self.accounts.authenticate("втори", "sample-password", administrator_only=True))
         self._remove_role_table_to_simulate_the_previous_version()
         reopened = LocalAccounts(self.path)
         self.assertTrue(reopened.is_administrator("първи"))

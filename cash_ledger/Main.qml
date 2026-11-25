@@ -931,16 +931,19 @@ ApplicationWindow {
         objectName: "closeRevisionDialog"
         anchors.centerIn: Overlay.overlay
         modal: true
-        title: "Приключи ревизия"
+        title: "Нов период"
         width: 430
         onOpened: {
             closeRevisionError.text = ""
-            revisionPassword.forceActiveFocus()
+            revisionUsername.forceActiveFocus()
         }
-        onClosed: revisionPassword.clear()
+        onClosed: {
+            revisionUsername.clear()
+            revisionPassword.clear()
+        }
 
         function confirm() {
-            const result = win.controller.closeRevision(revisionPassword.text)
+            const result = win.controller.closeRevision(revisionUsername.text, revisionPassword.text)
             if (!result.ok) {
                 closeRevisionError.text = result.message
                 return
@@ -968,10 +971,21 @@ ApplicationWindow {
                 font.weight: Font.DemiBold
             }
             TextField {
+                id: revisionUsername
+                objectName: "revisionUsername"
+                Layout.fillWidth: true
+                placeholderText: "Потребителско име на администратора"
+                Accessible.name: placeholderText
+                maximumLength: 64
+                onAccepted: revisionPassword.forceActiveFocus()
+            }
+            TextField {
                 id: revisionPassword
                 objectName: "revisionPassword"
                 Layout.fillWidth: true
                 placeholderText: "Парола на администратора"
+                Accessible.name: placeholderText
+                maximumLength: 512
                 echoMode: TextInput.Password
                 onAccepted: closeRevisionDialog.confirm()
             }
@@ -987,7 +1001,7 @@ ApplicationWindow {
                 LedgerButton { text: "Отказ"; onClicked: closeRevisionDialog.close() }
                 LedgerButton {
                     objectName: "confirmCloseRevision"
-                    text: "Приключи периода"
+                    text: "Нов период"
                     primary: true
                     onClicked: closeRevisionDialog.confirm()
                 }

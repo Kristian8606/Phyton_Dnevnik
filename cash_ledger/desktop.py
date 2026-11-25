@@ -101,11 +101,12 @@ class LedgerWindow(QObject):
     changed = Signal()
 
     def __init__(self, database: Path, parent=None, *, session_enabled=False, verify_admin=None,
-                 archive_directory=None):
+                 archive_directory=None, active_username=""):
         super().__init__(parent)
         self._ledger = Ledger(database, archive_directory=archive_directory)
         self._session_enabled = session_enabled
         self._verify_admin = verify_admin
+        self._active_username = active_username
         self._day = date.today()
         self._rows = DailyRows(self)
         self._summary = {}
@@ -244,15 +245,15 @@ class LedgerWindow(QObject):
             ],
         }
 
-    @Slot(str, result="QVariantMap")
-    def closeRevision(self, administrator_password):
+    @Slot(str, str, result="QVariantMap")
+    def closeRevision(self, administrator_username, administrator_password):
         if self._verify_admin is None:
             return {"ok": False, "message": "Само администраторът може да приключи ревизия."}
         if self._revision_preview is None or self._revision_preview.day != date.today():
             return {"ok": False, "message": "Отвори отново прегледа на ревизията."}
         try:
-            if not self._verify_admin(administrator_password):
-                return {"ok": False, "message": "Грешна парола на администратора."}
+            if not self._verify_admin(administrator_username, administrator_password):
+                return {"ok": False, "message": "Въведи правилните потребителско име и парола на администратора."}
             archive = self._ledger.close_revision(self._revision_preview)
         except ValidationError as error:
             self._revision_preview = None
@@ -404,7 +405,7 @@ class LedgerWindow(QObject):
         if not url.isLocalFile():
             return {"ok": False, "message": "Избери локален архив."}
         try:
-            if self._session_enabled and not self._verify_admin(administrator_password):
+            if self._session_enabled and not self._verify_admin(self._active_username, administrator_password):
                 return {"ok": False, "message": "Грешна парола на администратора."}
             safety = self._ledger.restore(Path(url.toLocalFile()))
         except ValidationError as error:
@@ -429,7 +430,7 @@ def make_window(database: Path, *, demo: bool = False, preferences: Preferences 
     engine = QQmlApplicationEngine()
     controller = LedgerWindow(
         database, engine, session_enabled=session_enabled, verify_admin=verify_admin,
-        archive_directory=archive_directory,
+        archive_directory=archive_directory, active_username=active_username,
     )
     preferences = preferences or Preferences(database.parent / "settings.ini", engine)
     updates = WindowsUpdates(database.parent / "updates", engine)
