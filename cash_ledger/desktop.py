@@ -1,6 +1,5 @@
 """Qt bindings for the ledger screen."""
 
-from calendar import monthrange
 from datetime import date, timedelta
 from pathlib import Path
 import sqlite3
@@ -185,11 +184,11 @@ class LedgerWindow(QObject):
     @Slot(int, int, result="QStringList")
     def calendarDaysWithOperations(self, year, month):
         try:
-            first = date(year, month, 1)
-            last = first.toordinal() + monthrange(year, month)[1] - 1
+            first = date(year, month, 1).toordinal()
+            # MonthGrid shows six weeks, including spillover into the next month.
             return self._ledger.operation_days(
-                date.fromordinal(max(1, first.toordinal() - 6)),
-                date.fromordinal(min(date.max.toordinal(), last + 6)),
+                date.fromordinal(max(1, first - 6)),
+                date.fromordinal(min(date.max.toordinal(), first + 41)),
             )
         except (ValueError, sqlite3.Error):
             return []

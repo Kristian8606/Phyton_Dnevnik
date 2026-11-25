@@ -224,7 +224,9 @@ class DesktopTests(unittest.TestCase):
         app = QGuiApplication.instance() or QGuiApplication([])
         with TemporaryDirectory() as temporary:
             database = Path(temporary) / "ledger.sqlite3"
-            Ledger(database).save(date(2024, 2, 29), {"income": "25"})
+            ledger = Ledger(database)
+            ledger.save(date(2024, 2, 29), {"income": "25"})
+            ledger.save(date(2021, 3, 10), {"income": "8"})
             engine, controller = make_window(database)
             try:
                 window: QQuickWindow = engine.rootObjects()[0]
@@ -258,7 +260,8 @@ class DesktopTests(unittest.TestCase):
                 self.assertFalse(item("calendarActivityDot_2024-02-28").property("visible"))
                 click(item("calendar_day_2024-02-29"))
                 self.assertEqual(controller.dateIso, "2024-02-29")
-                self.assertEqual(controller.summary["cash"], "25,00 €")
+                self.assertEqual(controller.summary["cash"], "33,00 €")
+                self.assertIn("2021-03-10", controller.calendarDaysWithOperations(2021, 2))
 
                 self.assertEqual(controller.goTo("2024-01-19"), "")
                 click(item("datePickerButton"))
