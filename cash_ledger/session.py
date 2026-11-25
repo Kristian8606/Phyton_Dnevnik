@@ -3,7 +3,7 @@
 from pathlib import Path
 import sqlite3
 
-from PySide6.QtCore import QFileDevice, QIODevice, QObject, Property, QSaveFile, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
@@ -14,7 +14,6 @@ from .preferences import Preferences
 
 class DesktopSession(QObject):
     formChanged = Signal()
-    recoveryCodeReady = Signal(str)
 
     def __init__(self, data_directory: Path, database_for_session, *, demo=False, show_windows=True,
                  archive_directory: Path | None = None):
@@ -105,55 +104,39 @@ class DesktopSession(QObject):
         window.signOutRequested.connect(self.sign_out)
         window.registrationRequested.connect(self.add_user)
         self._access_engine.rootObjects()[0].hide()
-        if administrator:
+        if administrator and self._show_windows:
             try:
-                recovery_code = self._accounts.issue_recovery_code(username, password, if_missing=True)
-            except (AccountError, OSError, sqlite3.Error):
-                window.showStatus("Кодът за възстановяване не е създаден. Опитай от „Настройки“.")
+                configured = self._accounts.has_numeric_recovery_code()
+            except (OSError, sqlite3.Error):
+                window.showStatus("Кодът за възстановяване е недостъпен.")
             else:
-                if recovery_code:
-                    self.recoveryCodeReady.emit(recovery_code)
+                if not configured:
+                    window.promptForRecoveryCode()
         return ""
 
-    @Slot(str, str, str, result="QVariantMap")
-    def resetAdministrator(self, code, username, password):
+    @Slot(str, str, str, str, result=str)
+    def resetAdministrator(self, code, username, password, new_code):
         if not self.canResetAdministrator:
-            return {"error": "Отвори „Регистрация“ от екрана за вход."}
+            return "Отвори „Регистрация“ от екрана за вход."
         try:
-            new_code = self._accounts.reset_administrator(code, username, password)
+            self._accounts.reset_administrator(code, username, password, new_code)
         except AccountError as exc:
-            return {"error": str(exc)}
+            return str(exc)
         except (OSError, sqlite3.Error):
-            return {"error": "Администраторският профил не можа да се обнови."}
-        return {"code": new_code}
+            return "Администраторският профил не можа да се обнови."
+        return ""
 
-    @Slot(str, result=str)
-    def replaceRecoveryCode(self, password):
+    @Slot(str, str, result=str)
+    def setRecoveryCode(self, password, code):
         if not self._administrator_username:
             return "Само администраторът може да създаде нов код."
         try:
-            code = self._accounts.issue_recovery_code(self._administrator_username, password)
+            self._accounts.set_recovery_code(self._administrator_username, password, code)
         except AccountError as exc:
             return str(exc)
         except (OSError, sqlite3.Error):
             return "Кодът за възстановяване не можа да се създаде."
-        self.recoveryCodeReady.emit(code)
         return ""
-
-    @Slot(QUrl, str, result=str)
-    def saveRecoveryCode(self, url, code):
-        if not url.isLocalFile():
-            return "Избери локален файл за кода."
-        file = QSaveFile(url.toLocalFile())
-        message = "Файлът с кода не можа да се запише."
-        if not file.open(QIODevice.OpenModeFlag.WriteOnly):
-            return message
-        file.setPermissions(QFileDevice.Permission.ReadOwner | QFileDevice.Permission.WriteOwner)
-        data = (code + "\n").encode("utf-8")
-        if file.write(data) != len(data):
-            file.cancelWriting()
-            return message
-        return "" if file.commit() else message
 
     @Slot()
     def add_user(self):

@@ -1,7 +1,10 @@
+from contextlib import closing
+from hashlib import pbkdf2_hmac
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from cash_ledger.accounts import AccountError, LocalAccounts
 
@@ -46,49 +49,67 @@ class AccountTests(unittest.TestCase):
         self.assertNotEqual(hashes[0][1], hashes[1][1])
         self.assertNotIn(b"sample-password", self.path.read_bytes())
 
-    def test_recovery_replaces_only_the_administrator_and_rotates_the_code(self):
+    def test_recovery_keeps_the_code_until_the_administrator_chooses_a_new_one(self):
         self.accounts.register("Админ", "old-password", "0000")
         self.accounts.register("Служител", "staff-password", "0000", administrator_password="old-password")
         with self.assertRaises(AccountError):
-            self.accounts.issue_recovery_code("Служител", "staff-password")
+            self.accounts.set_recovery_code("Служител", "staff-password", "957321624")
+        with self.assertRaisesRegex(AccountError, "девет"):
+            self.accounts.set_recovery_code("Админ", "old-password", "957301624")
+        self.accounts.set_recovery_code("Админ", "old-password", "957321624")
+        self.assertNotIn(b"957321624", self.path.read_bytes())
 
-        code = self.accounts.issue_recovery_code("Админ", "old-password", if_missing=True)
-        self.assertTrue(code)
-        self.assertEqual(self.accounts.issue_recovery_code("Админ", "old-password", if_missing=True), "")
-        self.assertNotIn(code.replace("-", "").encode(), self.path.read_bytes())
         reopened = LocalAccounts(self.path)
+        self.assertTrue(reopened.has_numeric_recovery_code())
         with self.assertRaises(AccountError):
             reopened.reset_administrator("123456789", "Нов", "new-password")
         with self.assertRaisesRegex(AccountError, "вече"):
-            reopened.reset_administrator(code, "Служител", "new-password")
+            reopened.reset_administrator("957321624", "Служител", "new-password", "849627531")
         self.assertTrue(reopened.authenticate("Админ", "old-password", administrator_only=True))
 
-        new_code = reopened.reset_administrator(code.lower().replace("-", " "), "Нов", "new-password")
-        self.assertNotEqual(new_code, code)
+        reopened.reset_administrator("957321624", "Нов", "new-password")
         self.assertFalse(reopened.authenticate("Админ", "old-password"))
         self.assertTrue(reopened.authenticate("Нов", "new-password", administrator_only=True))
         self.assertTrue(reopened.authenticate("Служител", "staff-password"))
         self.assertFalse(reopened.is_administrator("Служител"))
-        with self.assertRaises(AccountError):
-            reopened.reset_administrator(code, "Трети", "different-password")
 
-        reopened.reset_administrator(new_code, "НОВ", "different-password")
+        reopened.reset_administrator("957321624", "НОВ", "different-password", "849627531")
         self.assertTrue(reopened.authenticate("Нов", "different-password", administrator_only=True))
-        self.assertFalse(reopened.authenticate("Нов", "new-password"))
+        with self.assertRaises(AccountError):
+            reopened.reset_administrator("957321624", "Трети", "third-password")
+        reopened.reset_administrator("849627531", "Трети", "third-password")
+        self.assertTrue(reopened.is_administrator("Трети"))
 
-    def test_replacing_a_lost_code_requires_the_current_administrator_password(self):
-        self.accounts.register("Админ", "password", "0000")
+    def test_recovery_accepts_a_legacy_code_and_pauses_after_repeated_failures(self):
+        self.accounts.register("Админ", "old-password", "0000")
         with self.assertRaisesRegex(AccountError, "създаден"):
-            self.accounts.reset_administrator("123456789", "Админ", "new-password")
-        old_code = self.accounts.issue_recovery_code("Админ", "password")
-        with self.assertRaises(AccountError):
-            self.accounts.issue_recovery_code("Админ", "wrong")
-        code = self.accounts.issue_recovery_code("Админ", "password")
-        self.assertNotEqual(code, old_code)
-        with self.assertRaises(AccountError):
-            self.accounts.reset_administrator(old_code, "Нов", "new-password")
-        self.accounts.reset_administrator(code, "Нов", "new-password")
-        self.assertTrue(self.accounts.is_administrator("Нов"))
+            self.accounts.reset_administrator("957321624", "Админ", "new-password")
+        salt = bytes(16)
+        legacy_code = "D9345463F486AD2CE335B5782A65ACC0"
+        code_hash = pbkdf2_hmac("sha256", legacy_code.encode(), salt, 600_000)
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute("DROP TABLE administrator_recovery")
+            db.execute("""
+                CREATE TABLE administrator_recovery (
+                    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                    salt BLOB NOT NULL,
+                    code_hash BLOB NOT NULL
+                )
+            """)
+            db.execute("INSERT INTO administrator_recovery VALUES (1, ?, ?)", (salt, code_hash))
+
+        accounts = LocalAccounts(self.path)
+        self.assertFalse(accounts.has_numeric_recovery_code())
+        with patch("cash_ledger.accounts.time", return_value=100):
+            for _ in range(5):
+                with self.assertRaisesRegex(AccountError, "грешен"):
+                    accounts.reset_administrator("957321624", "Нов", "new-password")
+            with self.assertRaisesRegex(AccountError, "секунди"):
+                LocalAccounts(self.path).reset_administrator(legacy_code, "Нов", "new-password")
+        with patch("cash_ledger.accounts.time", return_value=161):
+            accounts.reset_administrator(legacy_code.lower(), "Нов", "new-password", "849627531")
+        self.assertTrue(accounts.has_numeric_recovery_code())
+        self.assertTrue(accounts.is_administrator("Нов"))
 
     def _remove_role_table_to_simulate_the_previous_version(self):
         db = sqlite3.connect(self.path)

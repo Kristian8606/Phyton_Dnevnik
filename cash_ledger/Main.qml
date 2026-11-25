@@ -367,7 +367,7 @@ ApplicationWindow {
                         objectName: "recoveryCodeMenuItem"
                         visible: win.accountSession && win.controller.isAdministrator
                         text: "Код за възстановяване…"
-                        onTriggered: recoverySettings.open()
+                        onTriggered: win.promptForRecoveryCode()
                     }
                     MenuItem {
                         visible: win.sessionEnabled
@@ -933,17 +933,8 @@ ApplicationWindow {
         }
     }
 
-    RecoveryCodeDialog {
-        id: administratorRecoveryCode
-        accountSession: win.accountSession
-    }
-
-    Connections {
-        target: win.accountSession
-        function onRecoveryCodeReady(code) {
-            recoverySettings.close()
-            administratorRecoveryCode.present(code)
-        }
+    function promptForRecoveryCode() {
+        recoverySettings.open()
     }
 
     Dialog {
@@ -953,13 +944,20 @@ ApplicationWindow {
         modal: true
         title: "Код за възстановяване"
 
-        function replaceCode() {
-            recoverySettingsError.text = win.accountSession.replaceRecoveryCode(recoverySettingsPassword.text)
+        function saveCode() {
+            const error = win.accountSession.setRecoveryCode(recoverySettingsPassword.text, chosenRecoveryCode.text)
+            if (error) {
+                recoverySettingsError.text = error
+                return
+            }
+            close()
+            win.showStatus("Кодът за възстановяване е запазен.")
         }
 
         onOpened: recoverySettingsPassword.forceActiveFocus()
         onClosed: {
             recoverySettingsPassword.clear()
+            chosenRecoveryCode.clear()
             recoverySettingsError.text = ""
         }
 
@@ -968,16 +966,28 @@ ApplicationWindow {
             LedgerText {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: "Въведи администраторската парола, за да създадеш нов код. Предишният код ще стане невалиден."
+                text: "Избери девет цифри от 1 до 9 за код при забравена парола."
             }
             TextField {
                 id: recoverySettingsPassword
+                objectName: "recoverySettingsPassword"
                 Layout.fillWidth: true
                 placeholderText: "Парола на администратора"
                 Accessible.name: placeholderText
                 echoMode: TextInput.Password
                 maximumLength: 512
-                onAccepted: recoverySettings.replaceCode()
+                onAccepted: chosenRecoveryCode.forceActiveFocus()
+            }
+            TextField {
+                id: chosenRecoveryCode
+                objectName: "chosenRecoveryCode"
+                Layout.fillWidth: true
+                placeholderText: "Код за възстановяване"
+                Accessible.name: placeholderText
+                echoMode: TextInput.PasswordEchoOnEdit
+                inputMethodHints: Qt.ImhDigitsOnly
+                maximumLength: 9
+                onAccepted: recoverySettings.saveCode()
             }
             LedgerText {
                 id: recoverySettingsError
@@ -988,11 +998,12 @@ ApplicationWindow {
             }
             RowLayout {
                 Layout.alignment: Qt.AlignRight
-                LedgerButton { text: "Отказ"; onClicked: recoverySettings.close() }
+                LedgerButton { text: "По-късно"; onClicked: recoverySettings.close() }
                 LedgerButton {
-                    text: "Създай нов код"
+                    objectName: "saveRecoveryCode"
+                    text: "Запази кода"
                     primary: true
-                    onClicked: recoverySettings.replaceCode()
+                    onClicked: recoverySettings.saveCode()
                 }
             }
         }

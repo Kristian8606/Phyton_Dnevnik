@@ -83,7 +83,7 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(journal.findChild(QObject, "activeUserLabel").property("text"), "Втори")
             member = journal.property("controller")
             self.assertFalse(member.isAdministrator)
-            self.assertIn("Само администраторът", session.replaceRecoveryCode("test-secret"))
+            self.assertIn("Само администраторът", session.setRecoveryCode("test-secret", "957321624"))
             member.revisionReport()
             ledger = Ledger(database)
             for name, secret in (("Втори", "different-pass"), ("Втори", "test-secret"),
@@ -107,7 +107,7 @@ class SessionTests(unittest.TestCase):
             gate.close()
             app.processEvents()
 
-    def test_forgotten_administrator_recovers_from_registration_with_saved_code(self):
+    def test_forgotten_administrator_recovers_from_registration_with_personal_code(self):
         app = QGuiApplication.instance() or QGuiApplication([])
         directory = Path(self.enterContext(TemporaryDirectory()))
         database = directory / "ledger.sqlite3"
@@ -137,15 +137,13 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(session.submit("Админ", "forgotten-password", ""), "")
             journal = session._work_engine.rootObjects()[0]
             app.processEvents()
-            code = item(journal, "issuedRecoveryCode").property("text")
-            self.assertEqual(len(code), 39)
-            click(journal, "copyRecoveryCode")
-            self.assertTrue(app.clipboard().text() == code)
-            app.clipboard().clear()
-            saved_file = directory / "Възстановяване.txt"
-            self.assertEqual(session.saveRecoveryCode(QUrl.fromLocalFile(str(saved_file)), code), "")
-            click(journal, "finishRecoveryCode")
-            self.assertEqual(item(journal, "issuedRecoveryCode").property("text"), "")
+            password_field = item(journal, "recoverySettingsPassword")
+            self.assertTrue(password_field.property("visible"))
+            password_field.setProperty("text", "forgotten-password")
+            item(journal, "chosenRecoveryCode").setProperty("text", "957321624")
+            click(journal, "saveRecoveryCode")
+            self.assertTrue(accounts.has_numeric_recovery_code())
+            self.assertFalse(password_field.property("visible"))
             session.sign_out()
             app.processEvents()
 
@@ -156,18 +154,16 @@ class SessionTests(unittest.TestCase):
             item(gate, "resetPassword").setProperty("text", "new-password")
             click(gate, "confirmAdministratorReset")
             self.assertIn("грешен", item(gate, "resetError").property("text"))
-            item(gate, "resetRecoveryCode").setProperty("text", saved_file.read_text(encoding="utf-8").strip())
+            item(gate, "resetRecoveryCode").setProperty("text", "957321624")
+            item(gate, "resetNewRecoveryCode").setProperty("text", "849627531")
             click(gate, "confirmAdministratorReset")
 
-            replacement = item(gate, "issuedRecoveryCode").property("text")
-            self.assertEqual(len(replacement), 39)
-            self.assertTrue(replacement != code)
-            click(gate, "finishRecoveryCode")
             self.assertFalse(item(gate, "registrationCode").property("visible"))
             self.assertTrue(gate.isVisible())
             self.assertEqual(session.submit("Нов админ", "new-password", ""), "")
             journal = session._work_engine.rootObjects()[0]
             self.assertTrue(journal.property("controller").isAdministrator)
+            self.assertFalse(item(journal, "chosenRecoveryCode").property("visible"))
             self.assertEqual(ledger.day(date.today()).summary["cash"], 12500)
             self.assertTrue(accounts.authenticate("Служител", "employee-password"))
         finally:

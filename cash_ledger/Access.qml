@@ -49,6 +49,7 @@ ApplicationWindow {
         verification.clear()
         administratorPassword.clear()
         errorText.text = ""
+        loginHint.text = ""
         username.forceActiveFocus()
     }
 
@@ -77,11 +78,6 @@ ApplicationWindow {
         }
     }
 
-    RecoveryCodeDialog {
-        id: savedCode
-        accountSession: access.session
-    }
-
     Dialog {
         id: resetDialog
         anchors.centerIn: Overlay.overlay
@@ -90,15 +86,16 @@ ApplicationWindow {
         title: "Нулирай администратора"
 
         function submitReset() {
-            const result = access.session.resetAdministrator(recoveryCode.text, newUsername.text, newPassword.text)
-            if (result.error) {
-                resetError.text = result.error
+            const error = access.session.resetAdministrator(
+                recoveryCode.text, newUsername.text, newPassword.text, newRecoveryCode.text)
+            if (error) {
+                resetError.text = error
                 return
             }
             close()
             access.session.cancelRegistration()
             access.clearForm()
-            savedCode.present(result.code)
+            loginHint.text = "Профилът е обновен. Влез с новото име и парола."
         }
 
         onOpened: recoveryCode.forceActiveFocus()
@@ -106,6 +103,7 @@ ApplicationWindow {
             recoveryCode.clear()
             newUsername.clear()
             newPassword.clear()
+            newRecoveryCode.clear()
             resetError.text = ""
         }
 
@@ -114,12 +112,12 @@ ApplicationWindow {
             Label {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: "Въведи запазения код и данните за новия администратор. Служителите и записите в дневника се запазват."
+                text: "Въведи текущия код и данните за администратора. Служителите и записите в дневника се запазват."
             }
             AccountField {
                 id: recoveryCode
                 objectName: "resetRecoveryCode"
-                placeholderText: "Код за възстановяване"
+                placeholderText: "Текущ код за възстановяване"
                 maximumLength: 128
                 echoMode: TextInput.Password
                 onAccepted: newUsername.forceActiveFocus()
@@ -137,7 +135,21 @@ ApplicationWindow {
                 placeholderText: "Нова парола"
                 maximumLength: 512
                 echoMode: TextInput.Password
+                onAccepted: newRecoveryCode.forceActiveFocus()
+            }
+            AccountField {
+                id: newRecoveryCode
+                objectName: "resetNewRecoveryCode"
+                placeholderText: "Нов код по желание"
+                inputMethodHints: Qt.ImhDigitsOnly
+                maximumLength: 9
+                echoMode: TextInput.PasswordEchoOnEdit
                 onAccepted: resetDialog.submitReset()
+            }
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "За нов код въведи девет цифри от 1 до 9. Празното поле запазва текущия код."
             }
             Label {
                 id: resetError
@@ -228,6 +240,13 @@ ApplicationWindow {
                 visible: text.length > 0
                 wrapMode: Text.WordWrap
                 color: access.dark ? "#f4a59b" : "#a5342c"
+            }
+            Label {
+                id: loginHint
+                Layout.fillWidth: true
+                visible: text.length > 0
+                wrapMode: Text.WordWrap
+                color: access.accent
             }
             Button {
                 id: submitButton
