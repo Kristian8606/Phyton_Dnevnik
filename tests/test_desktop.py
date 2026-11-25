@@ -92,6 +92,9 @@ class DesktopTests(unittest.TestCase):
             try:
                 app.processEvents()
                 root = window.contentItem()
+                tabs = visual_item(root, "navigationTabs")
+                self.assertIsNotNone(tabs)
+                self.assertEqual(tabs.property("currentIndex"), 0)
                 draft = visual_item(root, "entry_income")
                 draft.setProperty("text", "50")
 
@@ -104,11 +107,17 @@ class DesktopTests(unittest.TestCase):
 
                 click("revisionsTab")
                 self.assertTrue(window.property("showingRevisions"))
+                self.assertEqual(tabs.property("currentIndex"), 1)
                 closing = visual_item(root, "revision_closing")
                 self.assertEqual(closing.property("value") + " €", controller.summary["cash"])
                 click("operationsTab")
                 self.assertFalse(window.property("showingRevisions"))
+                self.assertEqual(tabs.property("currentIndex"), 0)
                 self.assertEqual(draft.property("text"), "50")
+                visual_item(root, "operationsTab").forceActiveFocus()
+                QTest.keyClick(window, Qt.Key.Key_Right)
+                self.assertEqual(tabs.property("currentIndex"), 1)
+                self.assertEqual(closing.property("value") + " €", controller.summary["cash"])
             finally:
                 window.close()
 

@@ -12,7 +12,7 @@ ApplicationWindow {
     property bool testMode: false
     property bool sessionEnabled: false
     property string activeUsername: ""
-    property bool showingRevisions: false
+    readonly property bool showingRevisions: navigationTabs.currentIndex === 1
     property var revisionReport: ({})
     property string revisionFeedback: ""
     signal signOutRequested()
@@ -162,7 +162,7 @@ ApplicationWindow {
     Shortcut {
         sequences: [StandardKey.Find]
         onActivated: {
-            win.showingRevisions = false
+            navigationTabs.setCurrentIndex(0)
             numberSearch.open()
         }
     }
@@ -212,6 +212,34 @@ ApplicationWindow {
         onTriggered: win.showStatus(win.preferences.setTheme(mode))
     }
 
+    component LedgerTab: TabButton {
+        id: control
+        width: implicitWidth
+        implicitHeight: workspaceHeader.height
+        padding: 0
+        leftPadding: 15
+        rightPadding: 15
+        hoverEnabled: true
+        contentItem: LedgerText {
+            text: control.text
+            horizontalAlignment: Text.AlignHCenter
+            font.weight: Font.DemiBold
+            color: control.checked ? win.accent : (control.hovered ? win.ink : win.muted)
+        }
+        background: Item {
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 1
+                height: 3
+                radius: 1.5
+                visible: control.checked || control.visualFocus
+                color: control.checked ? win.accent : win.balanceLine
+            }
+        }
+    }
+
     component ColumnCell: Rectangle {
         id: cell
         property bool divided: false
@@ -231,6 +259,7 @@ ApplicationWindow {
     }
 
     header: Rectangle {
+        id: workspaceHeader
         height: 54
         color: win.paper
         RowLayout {
@@ -252,19 +281,30 @@ ApplicationWindow {
                 color: win.accent
                 font.weight: Font.DemiBold
             }
-            LedgerButton {
-                objectName: "operationsTab"
-                text: "Операции"
-                highlighted: !win.showingRevisions
-                onClicked: win.showingRevisions = false
-            }
-            LedgerButton {
-                objectName: "revisionsTab"
-                text: "Ревизии"
-                highlighted: win.showingRevisions
-                onClicked: {
-                    win.revisionReport = win.controller.revisionReport()
-                    win.showingRevisions = true
+            TabBar {
+                id: navigationTabs
+                objectName: "navigationTabs"
+                Layout.fillHeight: true
+                Layout.leftMargin: 8
+                padding: 0
+                spacing: 0
+                background: Item {}
+                onCurrentIndexChanged: {
+                    if (currentIndex === 1 && win.controller)
+                        win.revisionReport = win.controller.revisionReport()
+                }
+
+                LedgerTab {
+                    objectName: "operationsTab"
+                    text: "Операции"
+                }
+                LedgerTab {
+                    objectName: "revisionsTab"
+                    text: "Ревизии"
+                    onPressed: {
+                        if (checked)
+                            win.revisionReport = win.controller.revisionReport()
+                    }
                 }
             }
             Item { Layout.fillWidth: true }
