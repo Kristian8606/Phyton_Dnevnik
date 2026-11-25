@@ -83,10 +83,23 @@ class SessionTests(unittest.TestCase):
             member = journal.property("controller")
             self.assertFalse(member.isAdministrator)
             member.revisionReport()
-            self.assertFalse(member.closeRevision("Касиер", "test-secret")["ok"])
+            ledger = Ledger(database)
+            for name, secret in (("Втори", "different-pass"), ("Втори", "test-secret"),
+                                 ("Касиер", "wrong")):
+                self.assertFalse(member.closeRevision(name, secret)["ok"])
+                self.assertEqual(len(ledger.day(date.today()).rows), 1)
+                self.assertEqual(ledger.revision_history(), [])
+
+            result = member.closeRevision("Касиер", "test-secret")
+            self.assertTrue(result["ok"], result)
+            self.assertFalse(member.isAdministrator)
+            self.assertEqual(journal.findChild(QObject, "activeUserLabel").property("text"), "Втори")
+            self.assertEqual(opens, [database, database])
             result = member.restoreArchive(QUrl.fromLocalFile(str(database)), "test-secret")
             self.assertIn("Само администраторът", result["message"])
-            self.assertEqual(Ledger(database).day(date.today()).summary["cash"], 2500)
+            self.assertEqual(ledger.day(date.today()).rows, [])
+            self.assertEqual(ledger.day(date.today()).summary["cash"], 2500)
+            self.assertEqual(len(ledger.revision_history()), 1)
         finally:
             session.sign_out()
             gate.close()

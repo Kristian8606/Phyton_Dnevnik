@@ -112,14 +112,14 @@ class DesktopTests(unittest.TestCase):
             finally:
                 window.close()
 
-    def test_confirming_revision_as_administrator_archives_current_rows_and_carries_cash(self):
+    def test_administrator_authorizes_a_new_period_for_the_signed_in_operator(self):
         app = QGuiApplication.instance() or QGuiApplication([])
         with TemporaryDirectory() as temporary:
             database = Path(temporary) / "ledger.sqlite3"
             store = Ledger(database)
             store.save(date.today(), {"income": "1225"})
             engine, controller = make_window(
-                database, session_enabled=True, active_username="admin",
+                database, session_enabled=True, active_username="operator",
                 verify_admin=lambda username, password: (username, password) == ("admin", "test-secret")
             )
             window = engine.rootObjects()[0]
@@ -135,7 +135,10 @@ class DesktopTests(unittest.TestCase):
                     app.processEvents()
 
                 click("revisionsTab")
-                self.assertEqual(visual_item(root, "closeRevisionButton").property("text"), "Нов период")
+                button = visual_item(root, "closeRevisionButton")
+                self.assertEqual(button.property("text"), "Нов период")
+                self.assertTrue(button.property("visible"))
+                self.assertFalse(controller.isAdministrator)
                 click("closeRevisionButton")
                 username = visual_item(root, "revisionUsername")
                 self.assertIsNotNone(username)

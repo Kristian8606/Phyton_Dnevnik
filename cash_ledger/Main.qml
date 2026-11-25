@@ -908,7 +908,7 @@ ApplicationWindow {
         visible: win.showingRevisions
         report: win.revisionReport
         feedback: win.revisionFeedback
-        administrator: win.controller && win.controller.isAdministrator
+        canAuthorizePeriod: win.controller && win.controller.canAuthorizePeriod
         tones: ({
             ink: win.ink, paper: win.paper, header: win.headerSurface, line: win.line,
             alternate: win.alternate, accent: win.actionFill, accentText: win.accentText

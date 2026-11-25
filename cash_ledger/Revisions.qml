@@ -6,7 +6,7 @@ ColumnLayout {
     id: view
     required property var report
     required property var tones
-    required property bool administrator
+    required property bool canAuthorizePeriod
     property string feedback: ""
     signal closeRequested()
     spacing: 10
@@ -92,7 +92,7 @@ ColumnLayout {
         Button {
             id: closeButton
             objectName: "closeRevisionButton"
-            visible: view.administrator
+            visible: view.canAuthorizePeriod
             enabled: Boolean(view.report.ok) && view.report.operationCount > 0
             text: "Нов период"
             padding: 9

@@ -87,7 +87,7 @@ class DesktopSession(QObject):
                 database, demo=self._demo, preferences=self._preferences,
                 session_enabled=True, visible=self._show_windows, active_username=username.strip(),
                 archive_directory=self._archive_directory,
-                verify_admin=verify_administrator if administrator else None,
+                is_administrator=administrator, verify_admin=verify_administrator,
             )
         except (OSError, sqlite3.Error) as exc:
             return f"Дневникът не можа да се отвори. {exc}"

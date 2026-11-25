@@ -100,11 +100,13 @@ class DailyRows(QAbstractListModel):
 class LedgerWindow(QObject):
     changed = Signal()
 
-    def __init__(self, database: Path, parent=None, *, session_enabled=False, verify_admin=None,
-                 archive_directory=None, active_username=""):
+    def __init__(self, database: Path, parent=None, *, session_enabled=False,
+                 is_administrator=False, verify_admin=None, archive_directory=None,
+                 active_username=""):
         super().__init__(parent)
         self._ledger = Ledger(database, archive_directory=archive_directory)
         self._session_enabled = session_enabled
+        self._is_administrator = is_administrator
         self._verify_admin = verify_admin
         self._active_username = active_username
         self._day = date.today()
@@ -218,6 +220,10 @@ class LedgerWindow(QObject):
 
     @Property(bool, constant=True)
     def isAdministrator(self):
+        return self._is_administrator
+
+    @Property(bool, constant=True)
+    def canAuthorizePeriod(self):
         return self._verify_admin is not None
 
     @Slot(result="QVariantMap")
@@ -248,7 +254,7 @@ class LedgerWindow(QObject):
     @Slot(str, str, result="QVariantMap")
     def closeRevision(self, administrator_username, administrator_password):
         if self._verify_admin is None:
-            return {"ok": False, "message": "Само администраторът може да приключи ревизия."}
+            return {"ok": False, "message": "За нов период е нужно потвърждение от администратор."}
         if self._revision_preview is None or self._revision_preview.day != date.today():
             return {"ok": False, "message": "Отвори отново прегледа на ревизията."}
         try:
@@ -400,7 +406,7 @@ class LedgerWindow(QObject):
 
     @Slot(QUrl, str, result="QVariantMap")
     def restoreArchive(self, url, administrator_password=""):
-        if self._session_enabled and self._verify_admin is None:
+        if self._session_enabled and (not self._is_administrator or self._verify_admin is None):
             return {"ok": False, "message": "Само администраторът може да възстанови архив."}
         if not url.isLocalFile():
             return {"ok": False, "message": "Избери локален архив."}
@@ -423,13 +429,15 @@ class LedgerWindow(QObject):
                 "message": f"Архивът е възстановен. Предишната база е запазена в {safety.name}. {refresh_error}"}
 
 def make_window(database: Path, *, demo: bool = False, preferences: Preferences | None = None,
-                session_enabled: bool = False, visible: bool = True, verify_admin=None,
+                session_enabled: bool = False, visible: bool = True,
+                is_administrator: bool = False, verify_admin=None,
                 active_username: str = "", archive_directory: Path | None = None):
     if QQuickStyle.name() != "Basic":
         QQuickStyle.setStyle("Basic")
     engine = QQmlApplicationEngine()
     controller = LedgerWindow(
-        database, engine, session_enabled=session_enabled, verify_admin=verify_admin,
+        database, engine, session_enabled=session_enabled,
+        is_administrator=is_administrator, verify_admin=verify_admin,
         archive_directory=archive_directory, active_username=active_username,
     )
     preferences = preferences or Preferences(database.parent / "settings.ini", engine)
