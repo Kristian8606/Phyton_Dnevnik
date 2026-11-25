@@ -6,6 +6,7 @@ Popup {
     id: picker
     required property string selectedIso
     required property string todayIso
+    property string earliestIso: "0001-01-01"
     required property var tones
     signal dateChosen(string iso)
 
@@ -197,7 +198,7 @@ Popup {
                 text: String(model.day)
                 Accessible.name: calendar.locale.toString(model.date, "d MMMM yyyy")
                 Accessible.selected: picked
-                enabled: model.year >= 1 && iso <= picker.todayIso
+                enabled: iso >= picker.earliestIso && iso <= picker.todayIso
                 hoverEnabled: true
                 padding: 0
                 onClicked: picker.dateChosen(iso)

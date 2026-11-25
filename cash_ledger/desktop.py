@@ -111,9 +111,13 @@ class LedgerWindow(QObject):
         self._widths = []
         self._editing = None
         self._operation_ids = []
+        self._period_start = date.min
+        self._revision_preview = None
         self._refresh()
 
     def _refresh(self):
+        self._period_start = self._ledger.current_period_start() or date.min
+        self._day = max(self._day, self._period_start)
         day = self._ledger.day(self._day)
         self._operation_ids = day.operation_ids
         display = [_screen_row(row, ids) for row, ids in zip(day.rows, day.operation_ids)]
@@ -168,6 +172,10 @@ class LedgerWindow(QObject):
     def todayIso(self):
         return date.today().isoformat()
 
+    @Property(str, notify=changed)
+    def periodStartIso(self):
+        return self._period_start.isoformat()
+
     @Property(bool, notify=changed)
     def isToday(self):
         return self._day == date.today()
@@ -202,13 +210,46 @@ class LedgerWindow(QObject):
     def revisionReport(self):
         today = date.today()
         try:
-            totals = self._ledger.revision_totals(today)
+            self._revision_preview = self._ledger.revision_snapshot(today)
+            history = self._ledger.revision_history()
+        except ValidationError as error:
+            return {"ok": False, "message": str(error)}
         except sqlite3.Error as error:
             return {"ok": False, "message": STORE_ERROR + str(error)}
-        return {"ok": True, "row": {
-            "date": today.strftime("%d.%m.%Y"),
-            **{key: decimal_text(value) for key, value in totals.items()},
-        }}
+        return {
+            "ok": True,
+            "operationCount": self._revision_preview.operation_count,
+            "carry": money(self._revision_preview.totals["closing"]),
+            "row": {
+                "date": today.strftime("%d.%m.%Y"),
+                **{key: decimal_text(value) for key, value in self._revision_preview.totals.items()},
+            },
+            "history": [
+                {"date": record.closed_at.strftime("%d.%m.%Y %H:%M"),
+                 **{key: decimal_text(value) for key, value in record.totals.items()}}
+                for record in history
+            ],
+        }
+
+    @Slot(str, result="QVariantMap")
+    def closeRevision(self, administrator_password):
+        if self._verify_admin is None:
+            return {"ok": False, "message": "Само администраторът може да приключи ревизия."}
+        if self._revision_preview is None or self._revision_preview.day != date.today():
+            return {"ok": False, "message": "Отвори отново прегледа на ревизията."}
+        try:
+            if not self._verify_admin(administrator_password):
+                return {"ok": False, "message": "Грешна парола на администратора."}
+            archive = self._ledger.close_revision(self._revision_preview)
+        except ValidationError as error:
+            self._revision_preview = None
+            return {"ok": False, "message": str(error)}
+        except (OSError, sqlite3.Error) as error:
+            return {"ok": False, "message": "Ревизията не е приключена. " + str(error)}
+        self._revision_preview = None
+        self._editing = None
+        refresh_error = self._select(date.today())
+        return {"ok": True, "message": f"Ревизията е записана. Резервно копие: {archive.name}. {refresh_error}".strip()}
 
     @Slot(result="QVariantMap")
     def cashReport(self):
@@ -256,6 +297,10 @@ class LedgerWindow(QObject):
         previous = self._day
         self._day = target
         try:
+            period_start = self._ledger.current_period_start()
+            if period_start is not None and target < period_start:
+                self._day = previous
+                return "Датата е в приключен период. Обобщението е в „Ревизии“."
             self._refresh()
         except sqlite3.Error as error:
             self._day = previous
@@ -347,7 +392,12 @@ class LedgerWindow(QObject):
         except (OSError, sqlite3.Error) as error:
             return {"ok": False, "message": "Възстановяването не е завършено. " + str(error)}
         self._editing = None
-        refresh_error = self._select(self._day)
+        self._revision_preview = None
+        try:
+            self._refresh()
+            refresh_error = ""
+        except sqlite3.Error as error:
+            refresh_error = STORE_ERROR + str(error)
         return {"ok": True,
                 "message": f"Архивът е възстановен. Предишната база е запазена в {safety.name}. {refresh_error}"}
 

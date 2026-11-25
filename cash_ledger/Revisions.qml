@@ -6,10 +6,13 @@ ColumnLayout {
     id: view
     required property var report
     required property var tones
+    required property bool administrator
+    property string feedback: ""
+    signal closeRequested()
     spacing: 10
 
     readonly property var columns: [
-        {key: "date", label: "Дата", width: 100},
+        {key: "date", label: "Дата", width: 130},
         {key: "profit", label: "Печалба (€)", width: 109},
         {key: "sold_gold", label: "Прод. зл. (г)", width: 106},
         {key: "sold_new_gold", label: "Прод. ново зл. (г)", width: 127},
@@ -59,17 +62,59 @@ ColumnLayout {
         }
     }
 
-    Label {
-        text: "Текущ период"
-        color: view.tones.ink
-        font.pixelSize: 23
-        font.weight: Font.DemiBold
+    component RevisionRow: Row {
+        id: line
+        required property var values
+        property bool current: false
+
+        Repeater {
+            model: view.columns
+            Cell {
+                required property var modelData
+                objectName: line.current ? "revision_" + modelData.key : ""
+                width: modelData.width + (table.contentWidth - view.tableWidth) / view.columns.length
+                value: line.values[modelData.key] || ""
+                numeric: modelData.key !== "date"
+                color: line.current ? view.tones.alternate : "transparent"
+            }
+        }
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
+        Label {
+            Layout.fillWidth: true
+            text: "Ревизии"
+            color: view.tones.ink
+            font.pixelSize: 23
+            font.weight: Font.DemiBold
+        }
+        Button {
+            id: closeButton
+            objectName: "closeRevisionButton"
+            visible: view.administrator
+            enabled: Boolean(view.report.ok) && view.report.operationCount > 0
+            text: "Приключи ревизия…"
+            padding: 9
+            onClicked: view.closeRequested()
+            contentItem: Label {
+                text: closeButton.text
+                color: closeButton.enabled ? view.tones.accentText : view.tones.ink
+                font.weight: Font.DemiBold
+                verticalAlignment: Text.AlignVCenter
+            }
+            background: Rectangle {
+                radius: 7
+                color: closeButton.enabled ? view.tones.accent : view.tones.header
+                border.color: closeButton.activeFocus ? view.tones.ink : "transparent"
+            }
+        }
     }
 
     Label {
         Layout.fillWidth: true
-        visible: view.report.message !== undefined
-        text: view.report.message || ""
+        visible: text.length > 0
+        text: view.report.message || view.feedback
         color: view.tones.ink
         wrapMode: Text.WordWrap
     }
@@ -91,7 +136,11 @@ ColumnLayout {
             flickableDirection: Flickable.HorizontalFlick
             ScrollBar.horizontal: ScrollBar {}
 
-            Column {
+            ColumnLayout {
+                width: table.contentWidth
+                height: table.height
+                spacing: 0
+
                 Row {
                     Repeater {
                         model: view.columns
@@ -104,18 +153,40 @@ ColumnLayout {
                         }
                     }
                 }
-                Row {
+                Label {
+                    Layout.leftMargin: 9
+                    Layout.topMargin: 7
+                    Layout.bottomMargin: 5
                     visible: Boolean(view.report.ok)
-                    Repeater {
-                        model: view.columns
-                        Cell {
-                            required property var modelData
-                            objectName: "revision_" + modelData.key
-                            width: modelData.width + (table.contentWidth - view.tableWidth) / view.columns.length
-                            value: view.report.ok ? view.report.row[modelData.key] : ""
-                            numeric: modelData.key !== "date"
-                        }
+                    text: "Текущ период"
+                    color: view.tones.ink
+                    font.weight: Font.DemiBold
+                }
+                RevisionRow {
+                    visible: Boolean(view.report.ok)
+                    current: true
+                    values: view.report.row || ({})
+                }
+                Label {
+                    Layout.leftMargin: 9
+                    Layout.topMargin: 9
+                    Layout.bottomMargin: 5
+                    visible: Boolean(view.report.history && view.report.history.length)
+                    text: "Приключени ревизии"
+                    color: view.tones.ink
+                    font.weight: Font.DemiBold
+                }
+                ListView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+                    model: view.report.history || []
+                    delegate: RevisionRow {
+                        required property var modelData
+                        values: modelData
                     }
+                    ScrollBar.vertical: ScrollBar {}
                 }
             }
         }

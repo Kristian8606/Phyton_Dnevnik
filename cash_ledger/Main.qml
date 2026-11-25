@@ -13,6 +13,7 @@ ApplicationWindow {
     property bool sessionEnabled: false
     property bool showingRevisions: false
     property var revisionReport: ({})
+    property string revisionFeedback: ""
     signal signOutRequested()
     signal registrationRequested()
     title: testMode ? "Дневник · Тестови дни" : "Дневник"
@@ -407,6 +408,7 @@ ApplicationWindow {
                             rightPadding: 7
                             quiet: true
                             Accessible.name: "Предишен ден"
+                            enabled: win.controller.dateIso > win.controller.periodStartIso
                             onClicked: win.showStatus(win.controller.shiftDay(-1))
                         }
                         LedgerButton {
@@ -452,6 +454,7 @@ ApplicationWindow {
                                 parent: dateButton
                                 selectedIso: win.controller.dateIso
                                 todayIso: win.controller.todayIso
+                                earliestIso: win.controller.periodStartIso
                                 tones: ({
                                     surface: win.paper, text: win.ink, muted: win.muted, line: win.line,
                                     accent: win.accent, onAccent: win.accentText, hover: win.positiveBg,
@@ -872,7 +875,92 @@ ApplicationWindow {
         anchors.margins: 16
         visible: win.showingRevisions
         report: win.revisionReport
-        tones: ({ink: win.ink, paper: win.paper, header: win.headerSurface, line: win.line})
+        feedback: win.revisionFeedback
+        administrator: win.controller && win.controller.isAdministrator
+        tones: ({
+            ink: win.ink, paper: win.paper, header: win.headerSurface, line: win.line,
+            alternate: win.alternate, accent: win.accent, accentText: win.accentText
+        })
+        onCloseRequested: {
+            win.revisionFeedback = ""
+            const pending = win.draft()
+            if (Object.keys(pending).some(key => key !== "pledge" && pending[key].trim())) {
+                win.revisionFeedback = "Запази или изчисти незаписаната операция преди ревизията."
+                return
+            }
+            win.revisionReport = win.controller.revisionReport()
+            if (win.revisionReport.ok && win.revisionReport.operationCount > 0)
+                closeRevisionDialog.open()
+        }
+    }
+
+    Dialog {
+        id: closeRevisionDialog
+        objectName: "closeRevisionDialog"
+        anchors.centerIn: Overlay.overlay
+        modal: true
+        title: "Приключи ревизия"
+        width: 430
+        onOpened: {
+            closeRevisionError.text = ""
+            revisionPassword.forceActiveFocus()
+        }
+        onClosed: revisionPassword.clear()
+
+        function confirm() {
+            const result = win.controller.closeRevision(revisionPassword.text)
+            if (!result.ok) {
+                closeRevisionError.text = result.message
+                return
+            }
+            close()
+            for (let index = 0; index < entries.count; index++)
+                entries.itemAt(index).editor.clear()
+            win.searchSelection = null
+            win.weightProblem = ""
+            win.showStatus("")
+            win.revisionReport = win.controller.revisionReport()
+            win.revisionFeedback = result.message
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 10
+            LedgerText {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "Ще се създаде резервно копие, ще се запази обобщението и операциите от периода ще се изчистят."
+            }
+            LedgerText {
+                Layout.fillWidth: true
+                text: "Начална каса на новия период  " + (win.revisionReport.carry || "")
+                font.weight: Font.DemiBold
+            }
+            TextField {
+                id: revisionPassword
+                objectName: "revisionPassword"
+                Layout.fillWidth: true
+                placeholderText: "Парола на администратора"
+                echoMode: TextInput.Password
+                onAccepted: closeRevisionDialog.confirm()
+            }
+            LedgerText {
+                id: closeRevisionError
+                Layout.fillWidth: true
+                visible: text.length > 0
+                color: win.warningColor
+                wrapMode: Text.WordWrap
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                LedgerButton { text: "Отказ"; onClicked: closeRevisionDialog.close() }
+                LedgerButton {
+                    objectName: "confirmCloseRevision"
+                    text: "Приключи периода"
+                    primary: true
+                    onClicked: closeRevisionDialog.confirm()
+                }
+            }
+        }
     }
 
     Dialog {
@@ -1161,7 +1249,7 @@ ApplicationWindow {
             LedgerText {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: "Архивът ще замени текущите записи. Текущата база ще се запази в отделен архив преди възстановяването."
+                text: "Архивът ще замени операциите и историята на ревизиите. Преди възстановяването ще се запази копие на текущата база."
             }
             TextField {
                 id: restorePassword
@@ -1192,6 +1280,10 @@ ApplicationWindow {
                         }
                         restoreConfirm.close()
                         win.showResult(result)
+                        if (win.showingRevisions) {
+                            win.revisionReport = win.controller.revisionReport()
+                            win.revisionFeedback = result.message
+                        }
                     }
                 }
             }

@@ -112,6 +112,46 @@ class DesktopTests(unittest.TestCase):
             finally:
                 window.close()
 
+    def test_confirming_revision_as_administrator_archives_current_rows_and_carries_cash(self):
+        app = QGuiApplication.instance() or QGuiApplication([])
+        with TemporaryDirectory() as temporary:
+            database = Path(temporary) / "ledger.sqlite3"
+            store = Ledger(database)
+            store.save(date.today(), {"income": "1225"})
+            engine, controller = make_window(
+                database, session_enabled=True, verify_admin=lambda password: password == "test-secret"
+            )
+            window = engine.rootObjects()[0]
+            try:
+                app.processEvents()
+                root = window.contentItem()
+                def click(name):
+                    item = visual_item(root, name)
+                    self.assertIsNotNone(item, name)
+                    point = item.mapToScene(QPointF(item.width() / 2, item.height() / 2))
+                    QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                                     point.toPoint())
+                    app.processEvents()
+
+                click("revisionsTab")
+                click("closeRevisionButton")
+                password = visual_item(root, "revisionPassword")
+                password.setProperty("text", "wrong")
+                click("confirmCloseRevision")
+                self.assertEqual(len(store.day(date.today()).rows), 1)
+                password.setProperty("text", "test-secret")
+                click("confirmCloseRevision")
+
+                self.assertEqual(store.day(date.today()).rows, [])
+                self.assertEqual(store.day(date.today()).carried_cash, 122500)
+                self.assertEqual(len(window.property("revisionReport")["history"]), 1)
+                self.assertIn("Резервно копие", window.property("revisionFeedback"))
+                self.assertFalse(visual_item(root, "closeRevisionButton").property("enabled"))
+                click("operationsTab")
+                self.assertEqual(controller.summary["carried"], "1\u00a0225,00 €")
+            finally:
+                window.close()
+
     def test_save_shares_the_receipts_bar_and_writes_the_entry(self):
         app = QGuiApplication.instance() or QGuiApplication([])
         with TemporaryDirectory() as temporary:

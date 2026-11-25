@@ -102,9 +102,33 @@ CREATE INDEX IF NOT EXISTS purchases_by_day ON purchases(day, id);
 PRAGMA user_version = 1;
 """
 
+REVISION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS revisions (
+    id INTEGER PRIMARY KEY,
+    day TEXT NOT NULL,
+    closed_at TEXT NOT NULL,
+    operation_count INTEGER NOT NULL CHECK (operation_count > 0),
+    profit INTEGER NOT NULL,
+    sold_gold INTEGER NOT NULL,
+    sold_new_gold INTEGER NOT NULL,
+    sold_silver INTEGER NOT NULL,
+    sold_new_silver INTEGER NOT NULL,
+    income INTEGER NOT NULL,
+    cost INTEGER NOT NULL,
+    bought_gold INTEGER NOT NULL,
+    bought_silver INTEGER NOT NULL,
+    closing INTEGER NOT NULL
+)
+"""
+REVISION_FIELDS = (
+    "profit", "sold_gold", "sold_new_gold", "sold_silver", "sold_new_silver",
+    "income", "cost", "bought_gold", "bought_silver", "closing",
+)
+
 BALANCE_SQL = """
 SELECT
-    COALESCE((SELECT SUM(interest + principal) FROM contracts WHERE day <= :day), 0)
+    COALESCE((SELECT closing FROM revisions WHERE day <= :day ORDER BY id DESC LIMIT 1), 0)
+    + COALESCE((SELECT SUM(interest + principal) FROM contracts WHERE day <= :day), 0)
     + COALESCE((SELECT SUM(COALESCE(income, 0) - COALESCE(cost, 0))
                 FROM cash_movements WHERE day <= :day), 0)
     - COALESCE((SELECT SUM(amount) FROM pledges WHERE day <= :day), 0)
@@ -141,6 +165,20 @@ class CashDay:
     carried: int
     movement: int
     closing: int
+
+
+@dataclass(frozen=True)
+class RevisionSnapshot:
+    day: date
+    totals: dict[str, int]
+    operation_count: int
+    previous_revision: int | None
+
+
+@dataclass(frozen=True)
+class ClosedRevision:
+    closed_at: datetime
+    totals: dict[str, int]
 
 
 @dataclass(frozen=True)
@@ -304,6 +342,16 @@ def _convert_opening_cash(db: sqlite3.Connection) -> None:
     db.execute("UPDATE settings SET opening_cash = 0 WHERE singleton = 1")
 
 
+def _latest_revision(db: sqlite3.Connection):
+    return db.execute("SELECT id, day, closing FROM revisions ORDER BY id DESC LIMIT 1").fetchone()
+
+
+def _require_current_period(db: sqlite3.Connection, day: str) -> None:
+    latest = _latest_revision(db)
+    if latest is not None and day < latest["day"]:
+        raise ValidationError("Датата е в приключен период. Обобщението е в „Ревизии“.")
+
+
 class Ledger:
     def __init__(self, path: Path):
         self.path = path
@@ -312,11 +360,15 @@ class Ledger:
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version == 0:
                 db.execute("PRAGMA journal_mode = WAL")
-                db.executescript("BEGIN IMMEDIATE;\n" + SCHEMA + "\nCOMMIT;")
-            elif version != 1:
+                db.executescript(
+                    "BEGIN IMMEDIATE;\n" + SCHEMA + REVISION_SCHEMA + ";\nPRAGMA user_version = 2;\nCOMMIT;"
+                )
+            elif version not in (1, 2):
                 raise sqlite3.DatabaseError("Тази версия на базата данни изисква по-нова програма.")
-            elif db.execute("SELECT opening_cash FROM settings WHERE singleton = 1").fetchone()[0]:
+            elif version == 1 or db.execute("SELECT opening_cash FROM settings WHERE singleton = 1").fetchone()[0]:
                 db.execute("BEGIN IMMEDIATE")
+                db.execute(REVISION_SCHEMA)
+                db.execute("PRAGMA user_version = 2")
                 _convert_opening_cash(db)
 
     @contextmanager
@@ -340,6 +392,7 @@ class Ledger:
 
         with self._connection() as db:
             db.execute("BEGIN IMMEDIATE")
+            _require_current_period(db, iso)
             if contract := records.get("contracts"):
                 _check_redemption(db, contract)
             for block, record in records.items():
@@ -376,6 +429,7 @@ class Ledger:
             raise ValidationError("Попълни данните на операцията.")
         with self._connection() as db:
             db.execute("BEGIN IMMEDIATE")
+            _require_current_period(db, day.isoformat())
             if self._operation(db, day, block, operation_id) != original:
                 raise ValidationError("Операцията е променена. Отвори я отново, за да видиш актуалните данни.")
             if block == "contracts":
@@ -402,9 +456,11 @@ class Ledger:
             source.execute("PRAGMA trusted_schema = OFF")
             source.execute("BEGIN")
             with self._connection() as destination:
-                compatible = (source.execute("PRAGMA user_version").fetchone() ==
-                              tuple(destination.execute("PRAGMA user_version").fetchone())
-                              and _schema_signature(source) == _schema_signature(destination))
+                version = source.execute("PRAGMA user_version").fetchone()[0]
+                expected_schema = _schema_signature(destination)
+                if version == 1:
+                    expected_schema = [entry for entry in expected_schema if entry[1] != "revisions"]
+                compatible = version in (1, 2) and _schema_signature(source) == expected_schema
                 if not compatible or source.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
                     raise ValidationError("Файлът не е валиден архив на тази версия на дневника.")
                 if source.execute("SELECT opening_cash FROM settings WHERE singleton = 1").fetchone() is None:
@@ -413,46 +469,105 @@ class Ledger:
                 safety = self.path.with_name(f"{self.path.stem}-before-restore-{stamp}.sqlite3")
                 destination.execute("BEGIN IMMEDIATE")
                 self.backup(safety)
-                for table in ("settings", *BLOCKS):
+                for table in ("settings", *BLOCKS, "revisions"):
+                    destination.execute(f"DELETE FROM {table}")
+                    if table == "revisions" and version == 1:
+                        continue
                     records = source.execute(f"SELECT * FROM {table}")
                     placeholders = ", ".join("?" for _ in records.description)
-                    destination.execute(f"DELETE FROM {table}")
                     destination.executemany(f"INSERT INTO {table} VALUES ({placeholders})", records)
                 _convert_opening_cash(destination)
         return safety
 
-    def revision_totals(self, day: date) -> dict[str, int]:
+    @staticmethod
+    def _revision_totals(db: sqlite3.Connection, day: date) -> dict[str, int]:
         params = {"day": day.isoformat(), "sale": SALE}
+        totals = dict(db.execute("""
+            WITH contracts_totals AS (
+                SELECT COALESCE(SUM(interest), 0) AS profit,
+                       COALESCE(SUM(weight) FILTER (WHERE marker = :sale AND weight_kind = 'gold'), 0) AS sold_gold,
+                       COALESCE(SUM(weight) FILTER (WHERE marker = :sale AND weight_kind = 'newGold'), 0) AS sold_new_gold,
+                       COALESCE(SUM(weight) FILTER (WHERE marker = :sale AND weight_kind = 'silver'), 0) AS sold_silver,
+                       COALESCE(SUM(weight) FILTER (WHERE marker = :sale AND weight_kind = 'newSilver'), 0) AS sold_new_silver
+                FROM contracts WHERE day <= :day
+            ), cash_totals AS (
+                SELECT COALESCE(SUM(income), 0) AS income, COALESCE(SUM(cost), 0) AS cost
+                FROM cash_movements WHERE day <= :day
+            ), purchase_totals AS (
+                SELECT COALESCE(SUM(gold), 0) AS bought_gold, COALESCE(SUM(silver), 0) AS bought_silver
+                FROM purchases WHERE day <= :day
+            )
+            SELECT * FROM contracts_totals CROSS JOIN cash_totals CROSS JOIN purchase_totals
+        """, params).fetchone())
+        totals["closing"] = db.execute(BALANCE_SQL, params).fetchone()[0]
+        return totals
+
+    def revision_totals(self, day: date) -> dict[str, int]:
         with self._connection() as db:
             db.execute("BEGIN")
-            totals = dict(db.execute("""
-                WITH contracts_totals AS (
-                    SELECT COALESCE(SUM(interest), 0) AS profit,
-                           COALESCE(SUM(weight) FILTER (WHERE marker = :sale AND weight_kind = 'gold'), 0) AS sold_gold,
-                           COALESCE(SUM(weight) FILTER (WHERE marker = :sale AND weight_kind = 'newGold'), 0) AS sold_new_gold,
-                           COALESCE(SUM(weight) FILTER (WHERE marker = :sale AND weight_kind = 'silver'), 0) AS sold_silver,
-                           COALESCE(SUM(weight) FILTER (WHERE marker = :sale AND weight_kind = 'newSilver'), 0) AS sold_new_silver
-                    FROM contracts WHERE day <= :day
-                ), cash_totals AS (
-                    SELECT COALESCE(SUM(income), 0) AS income, COALESCE(SUM(cost), 0) AS cost
-                    FROM cash_movements WHERE day <= :day
-                ), purchase_totals AS (
-                    SELECT COALESCE(SUM(gold), 0) AS bought_gold, COALESCE(SUM(silver), 0) AS bought_silver
-                    FROM purchases WHERE day <= :day
-                )
-                SELECT * FROM contracts_totals CROSS JOIN cash_totals CROSS JOIN purchase_totals
-            """, params).fetchone())
-            totals["closing"] = db.execute(BALANCE_SQL, params).fetchone()[0]
-        return totals
+            return self._revision_totals(db, day)
+
+    def _revision_snapshot(self, db: sqlite3.Connection, day: date) -> RevisionSnapshot:
+        iso = day.isoformat()
+        _require_current_period(db, iso)
+        latest = _latest_revision(db)
+        count = sum(db.execute(f"SELECT COUNT(*) FROM {block} WHERE day <= ?", (iso,)).fetchone()[0]
+                    for block in BLOCKS)
+        return RevisionSnapshot(day, self._revision_totals(db, day), count, latest["id"] if latest else None)
+
+    def revision_snapshot(self, day: date) -> RevisionSnapshot:
+        with self._connection() as db:
+            db.execute("BEGIN")
+            return self._revision_snapshot(db, day)
+
+    def revision_history(self) -> list[ClosedRevision]:
+        with self._connection() as db:
+            return [
+                ClosedRevision(datetime.fromisoformat(row["closed_at"]), {key: row[key] for key in REVISION_FIELDS})
+                for row in db.execute("SELECT * FROM revisions ORDER BY id DESC")
+            ]
+
+    def current_period_start(self) -> date | None:
+        with self._connection() as db:
+            latest = _latest_revision(db)
+            return date.fromisoformat(latest["day"]) if latest else None
+
+    def close_revision(self, preview: RevisionSnapshot) -> Path:
+        with self._connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            current = self._revision_snapshot(db, preview.day)
+            if current != preview:
+                raise ValidationError("Операциите са променени. Отвори отново прегледа на ревизията.")
+            if not current.operation_count:
+                raise ValidationError("Няма операции за приключване.")
+
+            closed_at = datetime.now().astimezone()
+            stamp = closed_at.strftime("%Y%m%d-%H%M%S-%f")
+            safety = self.path.with_name(f"{self.path.stem}-before-revision-{stamp}.sqlite3")
+            self.backup(safety)
+
+            labels = ", ".join(REVISION_FIELDS)
+            placeholders = ", ".join("?" for _ in REVISION_FIELDS)
+            db.execute(
+                f"INSERT INTO revisions (day, closed_at, operation_count, {labels}) VALUES (?, ?, ?, {placeholders})",
+                (current.day.isoformat(), closed_at.isoformat(timespec="seconds"), current.operation_count,
+                 *(current.totals[key] for key in REVISION_FIELDS)),
+            )
+            for block in BLOCKS:
+                db.execute(f"DELETE FROM {block} WHERE day <= ?", (current.day.isoformat(),))
+        return safety
 
     def cash_by_day(self, last_day: date) -> list[CashDay]:
         end = last_day.toordinal()
         start = max(1, end - 6)
-        prior = date.fromordinal(start - 1).isoformat() if start > 1 else ""
         history = []
         with self._connection() as db:
             db.execute("BEGIN")
-            carried = db.execute(BALANCE_SQL, {"day": prior}).fetchone()[0]
+            latest = _latest_revision(db)
+            first = date.fromisoformat(latest["day"]).toordinal() if latest else 0
+            start = max(start, first)
+            prior = date.fromordinal(start - 1).isoformat() if start > 1 else ""
+            carried = latest["closing"] if start == first else db.execute(BALANCE_SQL, {"day": prior}).fetchone()[0]
             for ordinal in range(start, end + 1):
                 day = date.fromordinal(ordinal)
                 closing = db.execute(BALANCE_SQL, {"day": day.isoformat()}).fetchone()[0]
