@@ -7,6 +7,7 @@ Item {
     required property QtObject controller
     required property var tones
     required property color warningColor
+    required property string localeName
     property string firstDate: controller.todayIso
     property string lastDate: controller.todayIso
     property bool choosingStart: true
@@ -50,7 +51,7 @@ Item {
             opacity: button.enabled ? 1 : 0.55
         }
         background: Rectangle {
-            radius: 7
+            radius: 10
             color: button.primary && button.enabled ? view.tones.selection
                                                     : button.hovered ? view.tones.hover : view.tones.surface
             border.color: button.visualFocus ? view.tones.accent : view.tones.line
@@ -63,7 +64,7 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         width: Math.min(560, parent.width - 32)
         implicitHeight: controls.implicitHeight + 40
-        radius: 12
+        radius: 16
         color: view.tones.surface
         border.color: view.tones.line
 
@@ -74,7 +75,7 @@ Item {
             spacing: 14
 
             Label {
-                text: "Печат на операции"
+                text: qsTr("Печат на операции")
                 color: view.tones.text
                 font.pixelSize: 21
                 font.weight: Font.DemiBold
@@ -84,7 +85,7 @@ Item {
                 RadioButton {
                     id: today
                     objectName: "printTodayOption"
-                    text: "Днес"
+                    text: qsTr("Днес")
                     checked: true
                     ButtonGroup.group: rangeMode
                     onClicked: view.result = ({})
@@ -92,7 +93,7 @@ Item {
                 RadioButton {
                     id: period
                     objectName: "printPeriodOption"
-                    text: "От–до"
+                    text: qsTr("От–до")
                     ButtonGroup.group: rangeMode
                     onClicked: view.result = ({})
                 }
@@ -100,20 +101,20 @@ Item {
             RowLayout {
                 visible: period.checked
                 spacing: 8
-                Label { text: "От"; color: view.tones.muted }
+                Label { text: qsTr("От"); color: view.tones.muted }
                 PrintAction {
                     id: firstButton
                     objectName: "printFirstDate"
                     text: view.displayDate(view.firstDate)
-                    Accessible.name: "Начална дата " + text
+                    Accessible.name: qsTr("Начална дата ") + text
                     onClicked: view.chooseDate(true)
                 }
-                Label { text: "До"; color: view.tones.muted }
+                Label { text: qsTr("До"); color: view.tones.muted }
                 PrintAction {
                     id: lastButton
                     objectName: "printLastDate"
                     text: view.displayDate(view.lastDate)
-                    Accessible.name: "Крайна дата " + text
+                    Accessible.name: qsTr("Крайна дата ") + text
                     onClicked: view.chooseDate(false)
                 }
             }
@@ -122,14 +123,14 @@ Item {
                 Layout.fillWidth: true
                 visible: text !== ""
                 wrapMode: Text.WordWrap
-                text: !view.validRange ? "Началната дата трябва да е преди или на крайната дата."
+                text: !view.validRange ? qsTr("Началната дата трябва да е преди или на крайната дата.")
                                        : (view.result.message || "")
                 color: view.validRange && view.result.ok ? view.tones.muted : view.warningColor
             }
             PrintAction {
                 objectName: "printOperationsButton"
                 Layout.alignment: Qt.AlignRight
-                text: "Печат…"
+                text: qsTr("Печат…")
                 primary: true
                 enabled: view.validRange
                 onClicked: {
@@ -143,6 +144,7 @@ Item {
     }
 
     CalendarPicker {
+        localeName: view.localeName
         id: calendar
         parent: view.choosingStart ? firstButton : lastButton
         controller: view.controller

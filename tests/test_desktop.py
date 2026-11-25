@@ -17,6 +17,7 @@ from PySide6.QtTest import QTest
 from cash_ledger.desktop import make_window
 from cash_ledger.demo import prepare_demo
 from cash_ledger.ledger import Ledger
+from cash_ledger.preferences import Preferences
 from cash_ledger.snapshots import AUTOMATIC_ARCHIVE_NAME, backup_before_update
 from cash_ledger.table_print import _print_table, _printer
 
@@ -28,6 +29,30 @@ def visual_item(root: QQuickItem, name: str) -> QQuickItem | None:
 
 
 class DesktopTests(unittest.TestCase):
+    def test_changing_language_translates_the_open_journal_without_losing_the_draft(self):
+        app = QGuiApplication.instance() or QGuiApplication([])
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary)
+            preferences = Preferences(path / "settings.ini")
+            engine, controller = make_window(path / "ledger.sqlite3", preferences=preferences)
+            window = engine.rootObjects()[0]
+            try:
+                app.processEvents()
+                save = visual_item(window.contentItem(), "saveOperationButton")
+                income = visual_item(window.contentItem(), "entry_income")
+                self.assertEqual(save.property("text"), "Запиши")
+                income.setProperty("text", "19 Бележка")
+                self.assertEqual(preferences.setLanguage("en"), "")
+                self.assertEqual(save.property("text"), "Save")
+                self.assertEqual(income.property("placeholderText"), "In.")
+                self.assertEqual(income.property("text"), "19 Бележка")
+                self.assertGreaterEqual(income.property("background").property("radius"), 10)
+                self.assertEqual(controller.saveDraft({})["message"], "Enter at least one transaction.")
+                self.assertEqual(Preferences(path / "settings.ini").language, "en")
+            finally:
+                preferences.setLanguage("bg")
+                window.close()
+
     def test_settings_theme_persists_and_archive_actions_are_available(self):
         app = QGuiApplication.instance() or QGuiApplication([])
         with TemporaryDirectory() as temporary:

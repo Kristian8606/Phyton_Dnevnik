@@ -9,6 +9,7 @@ from PySide6.QtGui import QFont, QFontMetrics
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
+from .i18n import language, localized
 from .ledger import BLOCKS, Ledger, MONETARY, SEARCH_LIMIT, ValidationError, WEIGHTS, weight_error
 
 from .preferences import Preferences
@@ -67,9 +68,9 @@ def _screen_row(row, operation_ids):
                 text = decimal_text(cell.value) if column["number"] else cell.value
             note = cell.note
             if cell.unit_price is not None:
-                price = money(cell.unit_price) + "/г"
+                price = money(cell.unit_price) + localized("/г")
                 sale = row["interest"].value + row["principal"].value
-                calculation = f"{money(sale)} ÷ {text} г = {price}"
+                calculation = f"{money(sale)} ÷ {text} {localized('г')} = {price}"
         cells.append({"text": text, "note": note, "price": price, "calculation": calculation,
                       "operationId": str(operation_ids.get(column["block"], ""))})
     return cells
@@ -166,7 +167,11 @@ class LedgerWindow(QObject):
 
     @Property(str, notify=changed)
     def dateText(self):
-        return QLocale("bg_BG").toString(self._day, "d MMMM yyyy")
+        return QLocale("en_GB" if language() == "en" else "bg_BG").toString(self._day, "d MMMM yyyy")
+
+    @Slot()
+    def refreshLanguage(self):
+        self._select(self._day)
 
     @Property(str, notify=changed)
     def dateIso(self):
@@ -201,9 +206,9 @@ class LedgerWindow(QObject):
         try:
             target = date.fromisoformat(value)
         except ValueError:
-            return "Въведи дата във формат ГГГГ-ММ-ДД."
+            return localized("Въведи дата във формат ГГГГ-ММ-ДД.")
         if target > date.today():
-            return "Избери днешна или по-ранна дата."
+            return localized("Избери днешна или по-ранна дата.")
         return self._select(target)
 
     @Slot(int, result=str)
@@ -211,7 +216,7 @@ class LedgerWindow(QObject):
         try:
             target = self._day + timedelta(days=days)
         except OverflowError:
-            return "Няма по-ранна дата."
+            return localized("Няма по-ранна дата.")
         return self._select(min(target, date.today()))
 
     @Slot(result=str)
@@ -223,20 +228,20 @@ class LedgerWindow(QObject):
             first = date.fromisoformat(first_iso) if first_iso else date.today()
             last = date.fromisoformat(last_iso) if last_iso else first
         except ValueError as error:
-            raise ValidationError("Избери начална и крайна дата.") from error
+            raise ValidationError(localized("Избери начална и крайна дата.")) from error
         if first > last:
-            raise ValidationError("Началната дата трябва да е преди или на крайната дата.")
+            raise ValidationError(localized("Началната дата трябва да е преди или на крайната дата."))
         if last > date.today():
-            raise ValidationError("Избери днешна или по-ранна крайна дата.")
+            raise ValidationError(localized("Избери днешна или по-ранна крайна дата."))
         selected, totals = self._ledger.operation_period(first, last)
         if not selected:
-            raise ValidationError("Няма записани операции за избраните дати.")
+            raise ValidationError(localized("Няма записани операции за избраните дати."))
 
         columns = []
         if first != last:
-            columns.append(PrintColumn("Дата", 88))
+            columns.append(PrintColumn(localized("Дата"), 88))
         columns.extend(PrintColumn(
-            " ".join(part for part in (column["title"], column["side"]) if part),
+            " ".join(part for part in (localized(column["title"]), column["side"]) if part),
             column["width"], column["number"],
         ) for column in QML_COLUMNS)
         rows = []
@@ -246,13 +251,13 @@ class LedgerWindow(QObject):
                 cells.insert(0, (day.strftime("%d.%m.%Y"),))
             rows.append(cells)
         if first == last:
-            period = ("Дата", first.strftime("%d.%m.%Y"))
+            period = (localized("Дата"), first.strftime("%d.%m.%Y"))
         else:
-            period = ("Период", f"{first:%d.%m.%Y} – {last:%d.%m.%Y}")
+            period = (localized("Период"), f"{first:%d.%m.%Y} – {last:%d.%m.%Y}")
         overview = (
-            period, ("Каса", money(totals["cash"])), ("Печалба", money(totals["profit"])),
-            ("Откуп", money(totals["redemption"])), ("Залози", money(totals["pledges"])),
-            ("Лихви", money(totals["interest"])),
+            period, (localized("Каса"), money(totals["cash"])), (localized("Печалба"), money(totals["profit"])),
+            (localized("Откуп"), money(totals["redemption"])), (localized("Залози"), money(totals["pledges"])),
+            (localized("Лихви"), money(totals["interest"])),
         )
         return columns, rows, overview
 
@@ -264,7 +269,7 @@ class LedgerWindow(QObject):
         except (ValidationError, OSError, sqlite3.Error) as error:
             return {"ok": False, "message": str(error)}
         return {"ok": True, "printed": printed,
-                "message": "Таблицата е изпратена за печат." if printed else ""}
+                "message": localized("Таблицата е изпратена за печат.") if printed else ""}
 
     @Property(bool, constant=True)
     def isAdministrator(self):
@@ -283,7 +288,7 @@ class LedgerWindow(QObject):
         except ValidationError as error:
             return {"ok": False, "message": str(error)}
         except sqlite3.Error as error:
-            return {"ok": False, "message": STORE_ERROR + str(error)}
+            return {"ok": False, "message": localized(STORE_ERROR) + str(error)}
         return {
             "ok": True,
             "operationCount": self._revision_preview.operation_count,
@@ -302,33 +307,34 @@ class LedgerWindow(QObject):
     @Slot(str, str, result="QVariantMap")
     def closeRevision(self, administrator_username, administrator_password):
         if self._verify_admin is None:
-            return {"ok": False, "message": "За нов период е нужно потвърждение от администратор."}
+            return {"ok": False, "message": localized("За нов период е нужно потвърждение от администратор.")}
         if self._revision_preview is None or self._revision_preview.day != date.today():
-            return {"ok": False, "message": "Отвори отново прегледа на ревизията."}
+            return {"ok": False, "message": localized("Отвори отново прегледа на ревизията.")}
         try:
             if not self._verify_admin(administrator_username, administrator_password):
-                return {"ok": False, "message": "Въведи правилните име и парола на администратора."}
+                return {"ok": False, "message": localized("Въведи правилните име и парола на администратора.")}
             self._ledger.close_revision(self._revision_preview)
         except ValidationError as error:
             self._revision_preview = None
             return {"ok": False, "message": str(error)}
         except (OSError, sqlite3.Error) as error:
-            return {"ok": False, "message": "Ревизията не е приключена. " + str(error)}
+            return {"ok": False, "message": localized("Ревизията не е приключена. ") + str(error)}
         self._revision_preview = None
         self._editing = None
         refresh_error = self._select(date.today())
-        return {"ok": True, "message": f"Ревизията е записана. Автоматичният архив е обновен. {refresh_error}".strip()}
+        message = localized("Ревизията е записана. Автоматичният архив е обновен.")
+        return {"ok": True, "message": f"{message} {refresh_error}".strip()}
 
     @Slot(str, result="QVariantMap")
     def findNumber(self, query):
         try:
             matches = self._ledger.find_number(query)
         except sqlite3.Error as error:
-            return {"ok": False, "message": STORE_ERROR + str(error)}
+            return {"ok": False, "message": localized(STORE_ERROR) + str(error)}
         return {"ok": True, "truncated": len(matches) > SEARCH_LIMIT, "matches": [
             {"block": match.block, "id": str(match.operation_id), "iso": match.day.isoformat(),
              "date": match.day.strftime("%d.%m.%Y"), "number": match.number,
-             "label": SEARCH_LABELS[match.kind], "amount": money(match.amount)}
+             "label": localized(SEARCH_LABELS[match.kind]), "amount": money(match.amount)}
             for match in matches[:SEARCH_LIMIT]
         ]}
 
@@ -342,7 +348,7 @@ class LedgerWindow(QObject):
                 field = "pledge" if block == "pledges" else "contract"
                 column = next(i for i, spec in enumerate(QML_COLUMNS) if spec["key"] == field)
                 return {"ok": True, "row": index, "column": column}
-        return {"ok": False, "message": "Операцията вече не е налична. Обнови търсенето."}
+        return {"ok": False, "message": localized("Операцията вече не е налична. Обнови търсенето.")}
 
     def _select(self, target):
         previous = self._day
@@ -351,11 +357,11 @@ class LedgerWindow(QObject):
             period_start = self._ledger.current_period_start()
             if period_start is not None and target < period_start:
                 self._day = previous
-                return "Датата е в приключен период. Обобщението е в „Ревизии“."
+                return localized("Датата е в приключен период. Обобщението е в „Ревизии“.")
             self._refresh()
         except sqlite3.Error as error:
             self._day = previous
-            return STORE_ERROR + str(error)
+            return localized(STORE_ERROR) + str(error)
         return ""
 
     @Slot("QVariantMap", result=str)
@@ -374,7 +380,7 @@ class LedgerWindow(QObject):
         try:
             replace_archive(self._ledger.path, self._ledger.automatic_archive_path())
         except (OSError, sqlite3.Error):
-            return "Не можа да се създаде копие на базата след тази операция."
+            return localized("Не можа да се създаде копие на базата след тази операция.")
         return ""
 
     @Slot("QVariantMap", result="QVariantMap")
@@ -384,9 +390,10 @@ class LedgerWindow(QObject):
         except ValidationError as error:
             return {"ok": False, "message": str(error)}
         except sqlite3.Error as error:
-            return {"ok": False, "message": STORE_ERROR + str(error)}
+            return {"ok": False, "message": localized(STORE_ERROR) + str(error)}
 
-        message = "Записана е 1 операция." if result.count == 1 else f"Записани са {result.count} операции."
+        message = (localized("Записана е 1 операция.") if result.count == 1
+                   else localized("Записани са {count} операции.").format(count=result.count))
         archive_error = self._archive_saved_operations()
         refresh_error = self.goToday()
         return {"ok": True, "cleared": list(result.cleared), "pledge": result.next_pledge or "",
@@ -412,26 +419,26 @@ class LedgerWindow(QObject):
                 text = decimal_text(cell.value, grouping=False) if column["number"] else cell.value
                 if cell.note:
                     text += " " + cell.note
-            fields.append({"key": column["key"], "label": column["label"],
+            fields.append({"key": column["key"], "label": localized(column["label"]),
                            "weight": column["weight"], "text": text})
-        return {"ok": True, "fields": fields, "title": BLOCK_LABELS[block], "date": self.dateText}
+        return {"ok": True, "fields": fields, "title": localized(BLOCK_LABELS[block]), "date": self.dateText}
 
     @Slot("QVariantMap", result="QVariantMap")
     def saveEdit(self, fields):
         if self._editing is None:
-            return {"ok": False, "message": "Избери операция от таблицата."}
+            return {"ok": False, "message": localized("Избери операция от таблицата.")}
         day, block, record_id, original = self._editing
         try:
             self._ledger.edit(day, block, record_id, fields, original)
         except ValidationError as error:
             return {"ok": False, "message": str(error)}
         except sqlite3.Error as error:
-            return {"ok": False, "message": STORE_ERROR + str(error)}
+            return {"ok": False, "message": localized(STORE_ERROR) + str(error)}
         self._editing = None
         archive_error = self._archive_saved_operations()
         refresh_error = self._select(day)
         return {"ok": True, "warning": bool(archive_error or refresh_error),
-                "message": " ".join(filter(None, ("Корекцията е записана.", archive_error, refresh_error)))}
+                "message": " ".join(filter(None, (localized("Корекцията е записана."), archive_error, refresh_error)))}
 
     @Slot(result=QUrl)
     def archiveFolder(self):
@@ -443,38 +450,38 @@ class LedgerWindow(QObject):
     @Slot(QUrl, result="QVariantMap")
     def createArchive(self, url):
         if not url.isLocalFile():
-            return {"ok": False, "message": "Избери локален файл за архива."}
+            return {"ok": False, "message": localized("Избери локален файл за архива.")}
         try:
             self._ledger.backup(Path(url.toLocalFile()))
         except FileExistsError:
-            return {"ok": False, "message": "Вече има файл с това име. Избери друго име."}
+            return {"ok": False, "message": localized("Вече има файл с това име. Избери друго име.")}
         except (OSError, sqlite3.Error) as error:
-            return {"ok": False, "message": "Архивът не е създаден. " + str(error)}
-        return {"ok": True, "message": "Архивът е създаден."}
+            return {"ok": False, "message": localized("Архивът не е създаден. ") + str(error)}
+        return {"ok": True, "message": localized("Архивът е създаден.")}
 
     @Slot(QUrl, str, str, result="QVariantMap")
     def restoreArchive(self, url, administrator_username, administrator_password):
         if self._session_enabled and self._verify_admin is None:
-            return {"ok": False, "message": "За възстановяване е нужно потвърждение от администратор."}
+            return {"ok": False, "message": localized("За възстановяване е нужно потвърждение от администратор.")}
         if not url.isLocalFile():
-            return {"ok": False, "message": "Избери локален архив."}
+            return {"ok": False, "message": localized("Избери локален архив.")}
         try:
             if self._session_enabled and not self._verify_admin(administrator_username, administrator_password):
-                return {"ok": False, "message": "Въведи правилните име и парола на администратора."}
+                return {"ok": False, "message": localized("Въведи правилните име и парола на администратора.")}
             safety = self._ledger.restore(Path(url.toLocalFile()))
         except ValidationError as error:
             return {"ok": False, "message": str(error)}
         except (OSError, sqlite3.Error) as error:
-            return {"ok": False, "message": "Възстановяването не е завършено. " + str(error)}
+            return {"ok": False, "message": localized("Възстановяването не е завършено. ") + str(error)}
         self._editing = None
         self._revision_preview = None
         try:
             self._refresh()
             refresh_error = ""
         except sqlite3.Error as error:
-            refresh_error = STORE_ERROR + str(error)
-        return {"ok": True,
-                "message": f"Архивът е възстановен. Предишната база е запазена в {safety.name}. {refresh_error}"}
+            refresh_error = localized(STORE_ERROR) + str(error)
+        message = localized("Архивът е възстановен. Предишната база е запазена в {filename}.").format(filename=safety.name)
+        return {"ok": True, "message": f"{message} {refresh_error}".strip()}
 
 def make_window(database: Path, *, demo: bool = False, preferences: Preferences | None = None,
                 session_enabled: bool = False, visible: bool = True,
@@ -483,12 +490,14 @@ def make_window(database: Path, *, demo: bool = False, preferences: Preferences 
     if QQuickStyle.name() != "Basic":
         QQuickStyle.setStyle("Basic")
     engine = QQmlApplicationEngine()
+    preferences = preferences or Preferences(database.parent / "settings.ini", engine)
     controller = LedgerWindow(
         database, engine, session_enabled=session_enabled,
         is_administrator=is_administrator, verify_admin=verify_admin,
         archive_directory=archive_directory,
     )
-    preferences = preferences or Preferences(database.parent / "settings.ini", engine)
+    preferences.languageChanged.connect(engine.retranslate)
+    preferences.languageChanged.connect(controller.refreshLanguage)
     updates = WindowsUpdates(database.parent / "updates", engine)
     engine.setInitialProperties({
         "controller": controller,

@@ -9,6 +9,7 @@ root = Path(SPECPATH).parent
 name = "Dnevnik"
 version = runpy.run_path(root / "cash_ledger" / "__init__.py")["__version__"]
 resources = [(str(path), "cash_ledger") for path in sorted((root / "cash_ledger").glob("*.qml"))]
+resources.append((str(root / "cash_ledger" / "en.json"), "cash_ledger"))
 
 analysis = Analysis(
     [str(root / "packaging" / "entry.py")],

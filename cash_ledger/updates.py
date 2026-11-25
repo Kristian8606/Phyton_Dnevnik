@@ -13,6 +13,7 @@ import sys
 from PySide6.QtCore import QIODevice, QObject, Property, QSaveFile, QUrl, Signal, Slot
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
+from .i18n import localized
 from . import __version__
 
 
@@ -48,7 +49,7 @@ def select_update(release: dict, installed: str) -> Update | None:
         digest = asset.get("digest") or ""
         if asset.get("name") == filename and re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
             return Update(tag, filename, digest.removeprefix("sha256:"))
-    raise ValueError("Новата версия няма проверим Windows инсталатор.")
+    raise ValueError(localized("Новата версия няма проверим Windows инсталатор."))
 
 
 def installer_arguments(application: Path, process_id: int) -> list[str]:
@@ -127,7 +128,7 @@ class WindowsUpdates(QObject):
         self._installer = None
         self._candidate = None
         self._get(RELEASE_METADATA_URL, b"application/vnd.github+json", self._release_received)
-        self._message = "Проверявам за нова версия…"
+        self._message = localized("Проверявам за нова версия…")
         self.changed.emit()
 
     def _release_received(self):
@@ -135,36 +136,36 @@ class WindowsUpdates(QObject):
         reply.deleteLater()
         status = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
         if status == 404:
-            self._complete("Няма достъпна версия. Провери дали хранилището е публично и дали има публикуван Windows инсталатор.")
+            self._complete(localized("Няма достъпна версия. Провери дали хранилището е публично и дали има публикуван Windows инсталатор."))
             return
         if reply.error() != QNetworkReply.NetworkError.NoError:
-            self._complete("Проверката за обновяване не завърши. Опитай отново.")
+            self._complete(localized("Проверката за обновяване не завърши. Опитай отново."))
             return
         try:
             self._candidate = select_update(json.loads(bytes(reply.readAll())), __version__)
         except (ValueError, KeyError, TypeError, AttributeError):
-            self._complete("Новата версия няма проверим Windows инсталатор.")
+            self._complete(localized("Новата версия няма проверим Windows инсталатор."))
             return
         if self._candidate is None:
-            self._complete("Използваш последната версия.")
+            self._complete(localized("Използваш последната версия."))
             return
         try:
             self._directory.mkdir(parents=True, exist_ok=True)
         except OSError:
-            self._complete("Папката за инсталатора не можа да се създаде.")
+            self._complete(localized("Папката за инсталатора не можа да се създаде."))
             return
 
         path = self._directory / self._candidate.filename
         self._download = QSaveFile(str(path), self)
         if not self._download.open(QIODevice.OpenModeFlag.WriteOnly):
-            self._complete("Инсталаторът не може да се запише.")
+            self._complete(localized("Инсталаторът не може да се запише."))
             return
         self._checksum = sha256()
         self._write_failed = False
         download = self._get(self._candidate.url, b"application/octet-stream", self._installer_received)
         download.setReadBufferSize(256 * 1024)
         download.readyRead.connect(self._write_download)
-        self._message = f"Изтеглям версия {self._candidate.tag[1:]}…"
+        self._message = localized("Изтеглям версия {version}…").format(version=self._candidate.tag[1:])
         self.changed.emit()
 
     def _write_download(self):
@@ -182,16 +183,16 @@ class WindowsUpdates(QObject):
         if not self._write_failed and reply.error() == QNetworkReply.NetworkError.NoError:
             self._write_download()
         if self._write_failed:
-            self._complete("Инсталаторът не може да се запише.")
+            self._complete(localized("Инсталаторът не може да се запише."))
         elif reply.error() != QNetworkReply.NetworkError.NoError:
-            self._complete("Изтеглянето не завърши. Опитай отново.")
+            self._complete(localized("Изтеглянето не завърши. Опитай отново."))
         elif self._checksum.hexdigest() != self._candidate.checksum:
-            self._complete("Изтегленият файл не премина проверката. Опитай отново.")
+            self._complete(localized("Изтегленият файл не премина проверката. Опитай отново."))
         elif not self._download.commit():
-            self._complete("Инсталаторът не може да се запише.")
+            self._complete(localized("Инсталаторът не може да се запише."))
         else:
             self._installer = self._directory / self._candidate.filename
-            self._complete(f"Версия {self._candidate.tag[1:]} е готова за инсталиране.")
+            self._complete(localized("Версия {version} е готова за инсталиране.").format(version=self._candidate.tag[1:]))
 
     @Slot(result=bool)
     def install(self):
@@ -207,6 +208,6 @@ class WindowsUpdates(QObject):
             start_windows_process([str(self._installer), *arguments])
         except OSError:
             self._installer = None
-            self._complete("Инсталаторът не можа да се стартира. Провери за обновяване отново.")
+            self._complete(localized("Инсталаторът не можа да се стартира. Провери за обновяване отново."))
             return False
         return True

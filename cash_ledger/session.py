@@ -7,6 +7,7 @@ from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
+from .i18n import localized
 from .accounts import AccountError, LocalAccounts
 from .desktop import make_window
 from .preferences import Preferences
@@ -28,6 +29,7 @@ class DesktopSession(QObject):
         self._registration_role = ""
         self._work_engine = None
         self._access_engine = QQmlApplicationEngine(self)
+        self._preferences.languageChanged.connect(self._access_engine.retranslate)
 
     def start(self) -> bool:
         if QQuickStyle.name() != "Basic":
@@ -62,7 +64,7 @@ class DesktopSession(QObject):
                 if not as_administrator:
                     return ""
             elif not self._accounts.authenticate(username, password):
-                return "Грешно име за вход или парола."
+                return localized("Грешно име за вход или парола.")
             administrator = self._accounts.is_administrator(username)
         except AccountError as exc:
             if not self._has_users and self._accounts.has_users():
@@ -73,7 +75,7 @@ class DesktopSession(QObject):
                     self.formChanged.emit()
             return str(exc)
         except (OSError, sqlite3.Error):
-            return "Профилите са недостъпни."
+            return localized("Профилите са недостъпни.")
 
         try:
             database = self._database_for_session()
@@ -88,9 +90,9 @@ class DesktopSession(QObject):
                 is_administrator=administrator, verify_admin=verify_administrator,
             )
         except (OSError, sqlite3.Error) as exc:
-            return f"Дневникът не можа да се отвори. {exc}"
+            return localized("Дневникът не можа да се отвори.") + f" {exc}"
         if not engine.rootObjects():
-            return "Дневникът не можа да се отвори."
+            return localized("Дневникът не можа да се отвори.")
         self._work_engine = engine
         window = engine.rootObjects()[0]
         window.signOutRequested.connect(self.sign_out)
@@ -107,7 +109,7 @@ class DesktopSession(QObject):
     @Slot(str, str, str, bool, result=str)
     def submitAdministratorRecovery(self, code, username, password, setup_code):
         if not self.canResetAdministrator:
-            return "Отвори „Нулирай администратора“ от екрана за вход."
+            return localized("Отвори „Нулирай администратора“ от екрана за вход.")
         try:
             if setup_code:
                 self._accounts.configure_recovery_code(username, password, code)
@@ -116,7 +118,7 @@ class DesktopSession(QObject):
         except AccountError as exc:
             return str(exc)
         except (OSError, sqlite3.Error):
-            return "Промяната не можа да се запише."
+            return localized("Промяната не можа да се запише.")
         return ""
 
     @Slot(str)

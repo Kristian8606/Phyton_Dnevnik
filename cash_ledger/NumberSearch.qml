@@ -2,22 +2,23 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-Dialog {
+RoundedDialog {
     id: search
     required property QtObject controller
     required property var tones
     signal matchChosen(var match)
     property var matches: []
     property string message: ""
-    title: "Търсене в дневника"
+    title: qsTr("Търсене в дневника")
     modal: true
     width: 525
     padding: 14
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     palette.window: tones.surface
     palette.base: tones.surface
+    palette.mid: tones.line
     palette.text: tones.text
-    palette.highlight: tones.accent
+    palette.highlight: tones.selection
     palette.highlightedText: tones.onAccent
 
     onOpened: {
@@ -37,8 +38,8 @@ Dialog {
         const result = controller.findNumber(query.text)
         matches = result.ok ? result.matches : []
         message = !result.ok ? result.message
-                            : (result.truncated ? "Уточни номера за по-тесен резултат."
-                                                : (matches.length === 0 ? "Няма съвпадения." : ""))
+                            : (result.truncated ? qsTr("Уточни номера за по-тесен резултат.")
+                                                : (matches.length === 0 ? qsTr("Няма съвпадения.") : ""))
         results.positionViewAtBeginning()
     }
 
@@ -48,31 +49,21 @@ Dialog {
         onTriggered: search.runSearch()
     }
 
-    background: Rectangle {
-        color: search.tones.surface
-        border.color: search.tones.line
-        radius: 12
-    }
-
     contentItem: ColumnLayout {
         spacing: 10
-        TextField {
+        RoundedField {
             id: query
             objectName: "findNumberInput"
             Layout.fillWidth: true
             Layout.preferredHeight: 37
-            placeholderText: "Номер на договор, етикет или залог"
+            placeholderText: qsTr("Номер на договор, етикет или залог")
             Accessible.name: placeholderText
             selectByMouse: true
             color: search.tones.text
             placeholderTextColor: search.tones.muted
+            focusBorder: search.tones.accent
             onTextChanged: pending.restart()
             onAccepted: search.runSearch()
-            background: Rectangle {
-                color: search.tones.surface
-                border.color: query.activeFocus ? search.tones.accent : search.tones.line
-                radius: 7
-            }
         }
 
         ListView {
@@ -123,7 +114,7 @@ Dialog {
                     }
                 }
                 background: Rectangle {
-                    radius: 7
+                    radius: 10
                     color: resultButton.hovered || resultButton.activeFocus ? search.tones.hover : search.tones.alternate
                     border.color: resultButton.activeFocus ? search.tones.accent : "transparent"
                 }

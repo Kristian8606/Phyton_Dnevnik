@@ -14,6 +14,8 @@ import sqlite3
 from tempfile import TemporaryDirectory
 from typing import Mapping
 
+from .i18n import localized
+
 SALE = "--||--"
 AUTOMATIC_ARCHIVE_NAME = "Автоматичен архив.sqlite3"
 SALE_MARKERS = (SALE, "1", "-")
@@ -141,7 +143,6 @@ SELECT
                 FROM purchases WHERE day <= :day), 0)
 """
 
-
 class ValidationError(ValueError):
     """A draft the cashier can correct before saving."""
 
@@ -206,16 +207,16 @@ class SaveResult:
 def weight_error(fields: Mapping[str, str]) -> str:
     populated = sum(bool(fields.get(key, "").strip()) for key in WEIGHTS)
     if populated > 1:
-        return WEIGHT_ERROR
+        return localized(WEIGHT_ERROR)
     if populated and fields.get("marker", "").strip() not in SALE_MARKERS:
-        return WEIGHT_WITHOUT_SALE
+        return localized(WEIGHT_WITHOUT_SALE)
     return ""
 
 
 def _decimal(text: str, name: str, *, note: bool = False) -> tuple[int, str]:
     match = DECIMAL.fullmatch(text)
     if not match or (match[3] and not note):
-        raise ValidationError(f"Въведи валидна стойност в „{name}“.")
+        raise ValidationError(localized("Въведи валидна стойност в „{field}“.").format(field=localized(name)))
     units = int(match[1]) * 100 + int((match[2] or "").ljust(2, "0"))
     return units, (match[3] or "")
 
@@ -229,7 +230,7 @@ def _contract(day: str, fields: Mapping[str, str]) -> tuple | None:
         return None
     number = fields.get("contract", "")
     if not NUMBER.fullmatch(number):
-        raise ValidationError("Въведи номер на договор или етикет.")
+        raise ValidationError(localized("Въведи номер на договор или етикет."))
     interest = _decimal(fields.get("interest", ""), MONEY_FIELDS["interest"])[0]
     principal = _decimal(fields.get("principal", ""), MONEY_FIELDS["principal"])[0]
     marker = fields.get("marker", "")
@@ -253,7 +254,7 @@ def _pledge(day: str, fields: Mapping[str, str]) -> tuple | None:
         return None
     number = fields.get("pledge", "")
     if not number:
-        raise ValidationError("Въведи номер на залог.")
+        raise ValidationError(localized("Въведи номер на залог."))
     amount = _decimal(fields["pledgeAmount"], MONEY_FIELDS["pledgeAmount"])[0]
     return day, number, amount
 
@@ -314,7 +315,7 @@ def _check_redemption(db: sqlite3.Connection, record: tuple, exclude: int | None
         "SELECT 1 FROM contracts WHERE day = ? AND contract_no = ? AND id IS NOT ?",
         (record[0], record[2], exclude),
     ).fetchone():
-        raise ValidationError(f"Номер {record[2]} вече е в таблицата за този ден.")
+        raise ValidationError(localized("Номер {number} вече е в таблицата за този ден.").format(number=record[2]))
 
 
 def _schema_signature(db: sqlite3.Connection) -> list[tuple]:
@@ -354,7 +355,7 @@ def _latest_revision(db: sqlite3.Connection):
 def _require_current_period(db: sqlite3.Connection, day: str) -> None:
     latest = _latest_revision(db)
     if latest is not None and day < latest["day"]:
-        raise ValidationError("Датата е в приключен период. Обобщението е в „Ревизии“.")
+        raise ValidationError(localized("Датата е в приключен период. Обобщението е в „Ревизии“."))
 
 
 def _table_rows(records):
@@ -397,7 +398,7 @@ class Ledger:
                     "BEGIN IMMEDIATE;\n" + SCHEMA + REVISION_SCHEMA + ";\nPRAGMA user_version = 2;\nCOMMIT;"
                 )
             elif version not in (1, 2):
-                raise sqlite3.DatabaseError("Тази версия на базата данни изисква по-нова програма.")
+                raise sqlite3.DatabaseError(localized("Тази версия на базата данни изисква по-нова програма."))
             elif version == 1 or db.execute("SELECT opening_cash FROM settings WHERE singleton = 1").fetchone()[0]:
                 db.execute("BEGIN IMMEDIATE")
                 db.execute(REVISION_SCHEMA)
@@ -420,8 +421,8 @@ class Ledger:
         records = {block: record for block in BLOCKS if (record := _draft_record(block, iso, fields))}
         if not records:
             if fields.get("pledge"):
-                raise ValidationError("Въведи сумата на залога.")
-            raise ValidationError("Въведи поне една операция.")
+                raise ValidationError(localized("Въведи сумата на залога."))
+            raise ValidationError(localized("Въведи поне една операция."))
 
         with self._connection() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -441,11 +442,11 @@ class Ledger:
 
     def _operation(self, db: sqlite3.Connection, day: date, block: str, operation_id: int) -> dict[str, Cell]:
         if block not in BLOCKS:
-            raise ValidationError("Избери операция от таблицата.")
+            raise ValidationError(localized("Избери операция от таблицата."))
         row = db.execute(f"SELECT * FROM {block} WHERE day = ? AND id = ?",
                          (day.isoformat(), operation_id)).fetchone()
         if row is None:
-            raise ValidationError("Операцията вече не е налична. Отвори датата отново.")
+            raise ValidationError(localized("Операцията вече не е налична. Отвори датата отново."))
         return _cells(block, row)
 
     def read_operation(self, day: date, block: str, operation_id: int) -> dict[str, Cell]:
@@ -455,16 +456,16 @@ class Ledger:
     def edit(self, day: date, block: str, operation_id: int,
              fields: Mapping[str, str], original: Mapping[str, Cell]) -> None:
         if block not in BLOCKS:
-            raise ValidationError("Избери операция от таблицата.")
+            raise ValidationError(localized("Избери операция от таблицата."))
         values = _checked_fields({key: fields.get(key, "") for key in BLOCKS[block][0]})
         record = _draft_record(block, day.isoformat(), values)
         if record is None:
-            raise ValidationError("Попълни данните на операцията.")
+            raise ValidationError(localized("Попълни данните на операцията."))
         with self._connection() as db:
             db.execute("BEGIN IMMEDIATE")
             _require_current_period(db, day.isoformat())
             if self._operation(db, day, block, operation_id) != original:
-                raise ValidationError("Операцията е променена. Отвори я отново, за да видиш актуалните данни.")
+                raise ValidationError(localized("Операцията е променена. Отвори я отново, за да видиш актуалните данни."))
             if block == "contracts":
                 _check_redemption(db, record, operation_id)
             columns = ", ".join(f"{name} = ?" for name in BLOCKS[block][1])
@@ -516,7 +517,7 @@ class Ledger:
 
     def restore(self, archive: Path) -> Path:
         if archive.samefile(self.path):
-            raise ValidationError("Избери архивен файл на дневника.")
+            raise ValidationError(localized("Избери архивен файл на дневника."))
         with closing(sqlite3.connect(archive.resolve().as_uri() + "?mode=ro", uri=True)) as source:
             source.execute("PRAGMA trusted_schema = OFF")
             source.execute("BEGIN")
@@ -527,9 +528,9 @@ class Ledger:
                     expected_schema = [entry for entry in expected_schema if entry[1] != "revisions"]
                 compatible = version in (1, 2) and _schema_signature(source) == expected_schema
                 if not compatible or source.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
-                    raise ValidationError("Файлът не е валиден архив на тази версия на дневника.")
+                    raise ValidationError(localized("Файлът не е валиден архив на тази версия на дневника."))
                 if source.execute("SELECT opening_cash FROM settings WHERE singleton = 1").fetchone() is None:
-                    raise ValidationError("В архива липсват настройките на дневника.")
+                    raise ValidationError(localized("В архива липсват настройките на дневника."))
                 destination.execute("BEGIN IMMEDIATE")
                 safety = self._safety_backup("restore", datetime.now())
                 for table in ("settings", *BLOCKS, "revisions"):
@@ -613,9 +614,9 @@ class Ledger:
             db.execute("BEGIN IMMEDIATE")
             current = self._revision_snapshot(db, preview.day)
             if current != preview:
-                raise ValidationError("Операциите са променени. Отвори отново прегледа на ревизията.")
+                raise ValidationError(localized("Операциите са променени. Отвори отново прегледа на ревизията."))
             if not current.operation_count:
-                raise ValidationError("Няма операции за приключване.")
+                raise ValidationError(localized("Няма операции за приключване."))
 
             closed_at = datetime.now().astimezone()
             archive = self.automatic_archive_path()
@@ -625,7 +626,7 @@ class Ledger:
                 with closing(sqlite3.connect(snapshot)) as copied, copied:
                     self._record_closed_period(copied, current, closed_at)
                     if copied.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
-                        raise sqlite3.DatabaseError("Копието на дневника не премина проверката.")
+                        raise sqlite3.DatabaseError(localized("Копието на дневника не премина проверката."))
 
                 self._record_closed_period(db, current, closed_at)
                 previous = Path(staging) / "previous.sqlite3"
@@ -678,7 +679,7 @@ class Ledger:
             db.execute("BEGIN")
             latest = _latest_revision(db)
             if latest and bounds[0] < latest["day"]:
-                raise ValidationError("Избери дати от текущия период.")
+                raise ValidationError(localized("Избери дати от текущия период."))
             for block in BLOCKS:
                 for row in db.execute(f"SELECT * FROM {block} WHERE day BETWEEN ? AND ? ORDER BY day, id", bounds):
                     records[row["day"]][block].append((row["id"], _cells(block, row)))

@@ -9,6 +9,7 @@ from PySide6.QtGui import QFont, QFontMetricsF, QPageLayout, QPageSize, QPainter
 from PySide6.QtPrintSupport import QAbstractPrintDialog, QPrintDialog, QPrinter
 from PySide6.QtWidgets import QDialog
 
+from .i18n import localized
 
 @dataclass(frozen=True)
 class PrintColumn:
@@ -118,16 +119,16 @@ def _pages(size, header, rows):
 def _print_table(printer, columns, rows, overview):
     size = printer.pageRect(QPrinter.Unit.Point).size()
     if size.isEmpty():
-        raise OSError("Избраният принтер няма достъпна област за печат.")
+        raise OSError(localized("Избраният принтер няма достъпна област за печат."))
     header, body = _table_markup(columns, rows, overview, size.width())
     painter = QPainter()
     if not painter.begin(printer):
-        raise OSError("Таблицата не можа да се отпечата.")
+        raise OSError(localized("Таблицата не можа да се отпечата."))
     try:
         scale = printer.resolution() / 72
         for index, (document, offset) in enumerate(_pages(size, header, body)):
             if index and not printer.newPage():
-                raise OSError("Следващата страница не можа да се отпечата.")
+                raise OSError(localized("Следващата страница не можа да се отпечата."))
             painter.save()
             painter.scale(scale, scale)
             painter.translate(0, -offset)
@@ -136,7 +137,7 @@ def _print_table(printer, columns, rows, overview):
     finally:
         painter.end()
     if printer.printerState() in (QPrinter.PrinterState.Error, QPrinter.PrinterState.Aborted):
-        raise OSError("Таблицата не можа да се отпечата.")
+        raise OSError(localized("Таблицата не можа да се отпечата."))
 
 
 def print_table(columns, rows, overview) -> bool:

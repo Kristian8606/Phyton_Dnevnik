@@ -8,6 +8,7 @@ Popup {
     required property string selectedIso
     required property string todayIso
     property string earliestIso: "0001-01-01"
+    required property string localeName
     required property var tones
     signal dateChosen(string iso)
 
@@ -15,8 +16,8 @@ Popup {
     readonly property int latestYear: Number(todayParts[0])
     readonly property int latestMonth: Number(todayParts[1]) - 1
     readonly property var months: [
-        "Януари", "Февруари", "Март", "Април", "Май", "Юни",
-        "Юли", "Август", "Септември", "Октомври", "Ноември", "Декември"
+        qsTr("Януари"), qsTr("Февруари"), qsTr("Март"), qsTr("Април"), qsTr("Май"), qsTr("Юни"),
+        qsTr("Юли"), qsTr("Август"), qsTr("Септември"), qsTr("Октомври"), qsTr("Ноември"), qsTr("Декември")
     ]
     property int shownYear: latestYear
     property int shownMonth: latestMonth
@@ -66,12 +67,12 @@ Popup {
             anchors.fill: parent
             anchors.topMargin: 3
             anchors.bottomMargin: -3
-            radius: 12
+            radius: 16
             color: picker.tones.shadow
         }
         Rectangle {
             anchors.fill: parent
-            radius: 12
+            radius: 16
             color: picker.tones.surface
             border.color: picker.tones.line
         }
@@ -90,7 +91,7 @@ Popup {
             verticalAlignment: Text.AlignVCenter
         }
         background: Rectangle {
-            radius: 6
+            radius: 9
             color: action.hovered ? picker.tones.hover : "transparent"
             border.color: action.activeFocus ? picker.tones.accent : "transparent"
         }
@@ -101,7 +102,7 @@ Popup {
         required property string symbol
         width: 25
         color: "transparent"
-        radius: 5
+        radius: 8
         Label {
             anchors.centerIn: parent
             text: step.symbol
@@ -120,7 +121,7 @@ Popup {
             CalendarAction {
                 objectName: "calendarPreviousMonth"
                 text: "‹"
-                Accessible.name: "Предишен месец"
+                Accessible.name: qsTr("Предишен месец")
                 enabled: picker.shownYear > 1 || picker.shownMonth > 0
                 onClicked: picker.setMonth(picker.shownYear, picker.shownMonth - 1)
             }
@@ -128,12 +129,19 @@ Popup {
                 id: monthSelect
                 Layout.fillWidth: true
                 Layout.preferredHeight: 34
-                Accessible.name: "Месец"
-                model: picker.months.slice(0, picker.shownYear === picker.latestYear ? picker.latestMonth + 1 : 12)
+                Accessible.name: qsTr("Месец")
+                model: picker.shownYear === picker.latestYear ? picker.latestMonth + 1 : 12
                 currentIndex: picker.shownMonth
+                displayText: picker.months[picker.shownMonth]
                 onActivated: index => picker.setMonth(picker.shownYear, index)
+                delegate: ItemDelegate {
+                    required property int index
+                    width: monthSelect.width
+                    text: picker.months[index]
+                    highlighted: monthSelect.highlightedIndex === index
+                }
                 background: Rectangle {
-                    radius: 6
+                    radius: 9
                     color: monthSelect.down ? picker.tones.hover : picker.tones.surface
                     border.color: monthSelect.activeFocus ? picker.tones.accent : picker.tones.line
                 }
@@ -142,7 +150,7 @@ Popup {
                 id: yearSelect
                 Layout.preferredWidth: 104
                 Layout.preferredHeight: 34
-                Accessible.name: "Година"
+                Accessible.name: qsTr("Година")
                 editable: true
                 from: 1
                 to: picker.latestYear
@@ -161,7 +169,7 @@ Popup {
                     color: yearSelect.up.pressed ? picker.tones.hover : "transparent"
                 }
                 background: Rectangle {
-                    radius: 6
+                    radius: 9
                     color: picker.tones.surface
                     border.color: yearSelect.activeFocus ? picker.tones.accent : picker.tones.line
                 }
@@ -169,7 +177,7 @@ Popup {
             CalendarAction {
                 objectName: "calendarNextMonth"
                 text: "›"
-                Accessible.name: "Следващ месец"
+                Accessible.name: qsTr("Следващ месец")
                 enabled: picker.shownYear < picker.latestYear || picker.shownMonth < picker.latestMonth
                 onClicked: picker.setMonth(picker.shownYear, picker.shownMonth + 1)
             }
@@ -197,7 +205,7 @@ Popup {
             Layout.preferredHeight: 206
             padding: 0
             spacing: 4
-            locale: Qt.locale("bg_BG")
+            locale: Qt.locale(picker.localeName)
             year: picker.shownYear
             month: picker.shownMonth
 
@@ -214,7 +222,7 @@ Popup {
                 text: String(model.day)
                 Accessible.name: calendar.locale.toString(model.date, "d MMMM yyyy")
                 Accessible.selected: picked
-                Accessible.description: hasOperations ? "Има записани операции" : ""
+                Accessible.description: hasOperations ? qsTr("Има записани операции") : ""
                 enabled: iso >= picker.earliestIso && iso <= picker.todayIso
                 hoverEnabled: true
                 padding: 0
@@ -231,7 +239,7 @@ Popup {
                     verticalAlignment: Text.AlignVCenter
                 }
                 background: Rectangle {
-                    radius: 7
+                    radius: 9
                     color: day.picked ? picker.tones.selection : (day.hovered ? picker.tones.hover : "transparent")
                     border.color: day.activeFocus || (day.today && !day.picked) ?
                                   picker.tones.accent : "transparent"
@@ -258,7 +266,7 @@ Popup {
         CalendarAction {
             objectName: "calendarTodayButton"
             Layout.alignment: Qt.AlignRight
-            text: "Днес"
+            text: qsTr("Днес")
             onClicked: picker.dateChosen(picker.todayIso)
         }
     }

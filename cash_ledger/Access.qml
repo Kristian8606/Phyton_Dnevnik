@@ -11,7 +11,7 @@ ApplicationWindow {
     height: 515
     minimumWidth: 340
     minimumHeight: 460
-    title: "Дневник"
+    title: qsTr("Дневник")
     color: dark ? "#101b2a" : "#eaf5ff"
 
     readonly property string registrationRole: session ? session.registrationRole : ""
@@ -29,10 +29,12 @@ ApplicationWindow {
     readonly property color accentText: "#102a43"
 
     palette.text: ink
+    palette.window: paper
     palette.windowText: ink
     palette.buttonText: ink
     palette.button: paper
     palette.base: paper
+    palette.mid: borderColor
     palette.highlight: actionFill
     palette.highlightedText: accentText
 
@@ -60,8 +62,7 @@ ApplicationWindow {
         }
     }
 
-    component AccountField: TextField {
-        id: field
+    component AccountField: RoundedField {
         Layout.fillWidth: true
         implicitHeight: 40
         font.pixelSize: 14
@@ -70,20 +71,16 @@ ApplicationWindow {
         selectByMouse: true
         leftPadding: 10
         rightPadding: 10
-        background: Rectangle {
-            radius: 7
-            color: access.paper
-            border.color: field.activeFocus ? access.accent : access.borderColor
-        }
+        focusBorder: access.accent
     }
 
-    Dialog {
+    RoundedDialog {
         id: resetDialog
         anchors.centerIn: Overlay.overlay
         width: Math.min(440, access.width - 32)
         modal: true
         property bool setupCode: false
-        title: setupCode ? "Задай код за нулиране" : "Нулирай администратора"
+        title: setupCode ? qsTr("Задай код за нулиране") : qsTr("Нулирай администратора")
 
         function submitRecovery() {
             const error = access.session.submitAdministratorRecovery(
@@ -95,8 +92,8 @@ ApplicationWindow {
             close()
             access.session.cancelRegistration()
             access.clearForm()
-            loginHint.text = setupCode ? "Кодът за нулиране е запазен."
-                                       : "Профилът е обновен. Влез с новото име и парола."
+            loginHint.text = setupCode ? qsTr("Кодът за нулиране е запазен.")
+                                       : qsTr("Профилът е обновен. Влез с новото име и парола.")
         }
 
         onAboutToShow: setupCode = access.session.needsRecoveryCode()
@@ -114,13 +111,13 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 text: resetDialog.setupCode
-                      ? "За да зададеш код за първи път, въведи името и паролата на текущия администратор."
-                      : "Въведи кода за нулиране и данните за администратора."
+                      ? qsTr("За да зададеш код за първи път, въведи името и паролата на текущия администратор.")
+                      : qsTr("Въведи кода за нулиране и данните за администратора.")
             }
             AccountField {
                 id: recoveryCode
                 objectName: "resetRecoveryCode"
-                placeholderText: resetDialog.setupCode ? "Четирицифрен код за нулиране" : "Код за нулиране"
+                placeholderText: resetDialog.setupCode ? qsTr("Четирицифрен код за нулиране") : qsTr("Код за нулиране")
                 maximumLength: resetDialog.setupCode ? 4 : 128
                 echoMode: TextInput.Password
                 onAccepted: resetDialog.setupCode ? resetDialog.submitRecovery() : recoveryUsername.forceActiveFocus()
@@ -128,15 +125,15 @@ ApplicationWindow {
             AccountField {
                 id: recoveryUsername
                 objectName: "resetUsername"
-                placeholderText: resetDialog.setupCode ? "Име на текущия администратор" : "Име за вход"
+                placeholderText: resetDialog.setupCode ? qsTr("Име на текущия администратор") : qsTr("Име за вход")
                 maximumLength: 64
                 onAccepted: recoveryPassword.forceActiveFocus()
             }
             AccountField {
                 id: recoveryPassword
                 objectName: "resetPassword"
-                placeholderText: resetDialog.setupCode ? "Парола на текущия администратор"
-                                                       : "Парола за новия администратор"
+                placeholderText: resetDialog.setupCode ? qsTr("Парола на текущия администратор")
+                                                       : qsTr("Парола за новия администратор")
                 maximumLength: 512
                 echoMode: TextInput.Password
                 onAccepted: resetDialog.setupCode ? recoveryCode.forceActiveFocus() : resetDialog.submitRecovery()
@@ -151,10 +148,10 @@ ApplicationWindow {
             }
             RowLayout {
                 Layout.alignment: Qt.AlignRight
-                Button { text: "Отказ"; onClicked: resetDialog.close() }
+                Button { text: qsTr("Отказ"); onClicked: resetDialog.close() }
                 Button {
                     objectName: "confirmAdministratorReset"
-                    text: resetDialog.setupCode ? "Запази кода" : "Потвърди"
+                    text: resetDialog.setupCode ? qsTr("Запази кода") : qsTr("Потвърди")
                     onClicked: resetDialog.submitRecovery()
                 }
             }
@@ -165,7 +162,7 @@ ApplicationWindow {
         anchors.centerIn: parent
         width: Math.min(360, parent.width - 28)
         height: form.implicitHeight + 48
-        radius: 15
+        radius: 19
         color: access.paper
         border.color: access.borderColor
 
@@ -175,16 +172,36 @@ ApplicationWindow {
             anchors.margins: 24
             spacing: 8
 
-            Label {
-                text: "Дневник"
-                color: access.accent
-                font.pixelSize: 17
-                font.weight: Font.DemiBold
+            RowLayout {
+                Layout.fillWidth: true
+                Label {
+                    Layout.fillWidth: true
+                    text: qsTr("Дневник")
+                    color: access.accent
+                    font.pixelSize: 17
+                    font.weight: Font.DemiBold
+                }
+                ComboBox {
+                    id: languagePicker
+                    objectName: "loginLanguagePicker"
+                    Layout.preferredWidth: 108
+                    Accessible.name: qsTr("Език")
+                    textRole: "label"
+                    valueRole: "code"
+                    model: [{label: "Български", code: "bg"}, {label: "English", code: "en"}]
+                    currentIndex: access.preferences && access.preferences.language === "en" ? 1 : 0
+                    onActivated: errorText.text = access.preferences.setLanguage(currentValue)
+                    background: Rectangle {
+                        radius: 10
+                        color: access.paper
+                        border.color: languagePicker.visualFocus ? access.accent : access.borderColor
+                    }
+                }
             }
             Label {
                 objectName: "accountFormTitle"
-                text: !access.registering ? "Вход"
-                      : access.addingUser ? "Юзър" : "Администратор"
+                text: !access.registering ? qsTr("Вход")
+                      : access.addingUser ? qsTr("Юзър") : qsTr("Администратор")
                 color: access.ink
                 font.pixelSize: 25
                 font.weight: Font.DemiBold
@@ -193,15 +210,15 @@ ApplicationWindow {
             AccountField {
                 id: username
                 objectName: "loginUsername"
-                placeholderText: "Име за вход"
+                placeholderText: qsTr("Име за вход")
                 maximumLength: 64
                 onAccepted: password.forceActiveFocus()
             }
             AccountField {
                 id: password
                 objectName: "loginPassword"
-                placeholderText: !access.registering ? "Парола"
-                                 : access.addingUser ? "Парола за юзъра" : "Парола за администратора"
+                placeholderText: !access.registering ? qsTr("Парола")
+                                 : access.addingUser ? qsTr("Парола за юзъра") : qsTr("Парола за администратора")
                 maximumLength: 512
                 echoMode: TextInput.Password
                 onAccepted: access.registering ? verification.forceActiveFocus() : access.submit()
@@ -209,7 +226,7 @@ ApplicationWindow {
             AccountField {
                 id: verification
                 objectName: "registrationCode"
-                placeholderText: access.addingUser ? "Код за верификация" : "Код за администратора"
+                placeholderText: access.addingUser ? qsTr("Код за верификация") : qsTr("Код за администратора")
                 visible: access.registering
                 maximumLength: 4
                 inputMethodHints: Qt.ImhDigitsOnly
@@ -234,8 +251,8 @@ ApplicationWindow {
             Button {
                 id: submitButton
                 objectName: "accountSubmitButton"
-                text: !access.registering ? "Влез"
-                      : access.addingUser ? "Създай юзър" : "Създай администратор"
+                text: !access.registering ? qsTr("Влез")
+                      : access.addingUser ? qsTr("Създай юзър") : qsTr("Създай администратор")
                 Layout.fillWidth: true
                 implicitHeight: 41
                 Layout.topMargin: 7
@@ -248,7 +265,7 @@ ApplicationWindow {
                     verticalAlignment: Text.AlignVCenter
                 }
                 background: Rectangle {
-                    radius: 7
+                    radius: 10
                     color: submitButton.down ? Qt.darker(access.actionFill, 1.08) : access.actionFill
                     border.color: submitButton.activeFocus ? access.ink : "transparent"
                 }
@@ -258,7 +275,7 @@ ApplicationWindow {
                 Layout.alignment: Qt.AlignHCenter
                 Button {
                     objectName: "userRegistrationButton"
-                    text: "Юзър"
+                    text: qsTr("Юзър")
                     flat: true
                     onClicked: {
                         access.session.beginRegistration("user")
@@ -267,7 +284,7 @@ ApplicationWindow {
                 }
                 Button {
                     objectName: "administratorButton"
-                    text: "Администратор"
+                    text: qsTr("Администратор")
                     flat: true
                     onClicked: {
                         if (access.session.canResetAdministrator)
@@ -283,7 +300,7 @@ ApplicationWindow {
                 objectName: "backToLoginButton"
                 visible: access.registering
                 Layout.alignment: Qt.AlignHCenter
-                text: "Назад"
+                text: qsTr("Назад")
                 flat: true
                 onClicked: {
                     access.session.cancelRegistration()

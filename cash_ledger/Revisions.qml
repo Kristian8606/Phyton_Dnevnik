@@ -12,17 +12,17 @@ ColumnLayout {
     spacing: 10
 
     readonly property var columns: [
-        {key: "date", label: "Дата", width: 130},
-        {key: "profit", label: "Печалба (€)", width: 109},
-        {key: "sold_gold", label: "Прод. зл. (г)", width: 106},
-        {key: "sold_new_gold", label: "Прод. ново зл. (г)", width: 127},
-        {key: "sold_silver", label: "Прод. ср. (г)", width: 106},
-        {key: "sold_new_silver", label: "Прод. ново ср. (г)", width: 128},
-        {key: "income", label: "Приход (€)", width: 110},
-        {key: "cost", label: "Разход (€)", width: 110},
-        {key: "bought_gold", label: "Куп. зл. (€)", width: 110},
-        {key: "bought_silver", label: "Куп. ср. (€)", width: 110},
-        {key: "closing", label: "Каса в края (€)", width: 123}
+        {key: "date", label: qsTr("Дата"), width: 130},
+        {key: "profit", label: qsTr("Печалба (€)"), width: 109},
+        {key: "sold_gold", label: qsTr("Прод. зл. (г)"), width: 106},
+        {key: "sold_new_gold", label: qsTr("Прод. ново зл. (г)"), width: 127},
+        {key: "sold_silver", label: qsTr("Прод. ср. (г)"), width: 106},
+        {key: "sold_new_silver", label: qsTr("Прод. ново ср. (г)"), width: 128},
+        {key: "income", label: qsTr("Приход (€)"), width: 110},
+        {key: "cost", label: qsTr("Разход (€)"), width: 110},
+        {key: "bought_gold", label: qsTr("Куп. зл. (€)"), width: 110},
+        {key: "bought_silver", label: qsTr("Куп. ср. (€)"), width: 110},
+        {key: "closing", label: qsTr("Каса в края (€)"), width: 123}
     ]
     readonly property real tableWidth: columns.reduce((total, column) => total + column.width, 0)
 
@@ -84,7 +84,7 @@ ColumnLayout {
         Layout.fillWidth: true
         Label {
             Layout.fillWidth: true
-            text: "Ревизии"
+            text: qsTr("Ревизии")
             color: view.tones.ink
             font.pixelSize: 23
             font.weight: Font.DemiBold
@@ -94,7 +94,7 @@ ColumnLayout {
             objectName: "closeRevisionButton"
             visible: view.canAuthorizePeriod
             enabled: Boolean(view.report.ok) && view.report.operationCount > 0
-            text: "Нов период"
+            text: qsTr("Нов период")
             padding: 9
             onClicked: view.closeRequested()
             contentItem: Label {
@@ -104,7 +104,7 @@ ColumnLayout {
                 verticalAlignment: Text.AlignVCenter
             }
             background: Rectangle {
-                radius: 7
+                radius: 10
                 color: closeButton.enabled ? view.tones.accent : view.tones.header
                 border.color: closeButton.activeFocus ? view.tones.ink : "transparent"
             }
@@ -158,7 +158,7 @@ ColumnLayout {
                     Layout.topMargin: 7
                     Layout.bottomMargin: 5
                     visible: Boolean(view.report.ok)
-                    text: "Текущ период"
+                    text: qsTr("Текущ период")
                     color: view.tones.ink
                     font.weight: Font.DemiBold
                 }
@@ -172,7 +172,7 @@ ColumnLayout {
                     Layout.topMargin: 9
                     Layout.bottomMargin: 5
                     visible: Boolean(view.report.history && view.report.history.length)
-                    text: "Приключени ревизии"
+                    text: qsTr("Приключени ревизии")
                     color: view.tones.ink
                     font.weight: Font.DemiBold
                 }

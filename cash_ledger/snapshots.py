@@ -7,6 +7,7 @@ from stat import S_ISREG
 from tempfile import TemporaryDirectory
 from time import monotonic
 
+from .i18n import localized
 from .ledger import AUTOMATIC_ARCHIVE_NAME, BLOCKS
 
 
@@ -18,7 +19,7 @@ def backup_before_update(data_directory: Path, archive_directory: Path) -> Path 
         except FileNotFoundError:
             continue
         if not S_ISREG(mode):
-            raise OSError("Файлът на дневника не е достъпен.")
+            raise OSError(localized("Файлът на дневника не е достъпен."))
         break
     else:
         return None
@@ -40,7 +41,7 @@ def replace_archive(database: Path, target: Path) -> None:
 
             def check_progress(status, _remaining, _total):
                 if status in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED) and monotonic() >= deadline:
-                    raise TimeoutError("Дневникът е зает и не може да се архивира.")
+                    raise TimeoutError(localized("Дневникът е зает и не може да се архивира."))
 
             with closing(sqlite3.connect(uri + "?mode=ro", uri=True)) as source:
                 with closing(sqlite3.connect(temporary)) as snapshot:
@@ -53,5 +54,5 @@ def replace_archive(database: Path, target: Path) -> None:
                     tables = {row[0] for row in snapshot.execute("SELECT name FROM sqlite_schema WHERE type = 'table'")}
                     if (version not in (1, 2) or not required <= tables
                             or snapshot.execute("PRAGMA quick_check").fetchall() != [("ok",)]):
-                        raise sqlite3.DatabaseError("Копието на дневника не премина проверката.")
+                        raise sqlite3.DatabaseError(localized("Копието на дневника не премина проверката."))
             temporary.replace(target)

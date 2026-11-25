@@ -16,7 +16,7 @@ ApplicationWindow {
     property var revisionReport: ({})
     property string revisionFeedback: ""
     signal signOutRequested()
-    title: testMode ? "Дневник · Тестови дни" : "Дневник"
+    title: testMode ? qsTr("Дневник · Тестови дни") : qsTr("Дневник")
     width: Math.max(800, Math.min(1400, Screen.desktopAvailableWidth - 28))
     height: Math.max(540, Math.min(760, Screen.desktopAvailableHeight - 60))
     minimumWidth: 760
@@ -27,6 +27,7 @@ ApplicationWindow {
     readonly property bool dark: currentTheme === "dark"
                                 || (currentTheme === "system"
                                     && Application.styleHints.colorScheme === Qt.ColorScheme.Dark)
+    readonly property string localeName: preferences && preferences.language === "en" ? "en_GB" : "bg_BG"
 
     palette.window: win.paper
     palette.windowText: win.ink
@@ -34,6 +35,7 @@ ApplicationWindow {
     palette.text: win.ink
     palette.button: win.paper
     palette.buttonText: win.ink
+    palette.mid: win.line
     palette.highlight: win.actionFill
     palette.highlightedText: win.accentText
     readonly property color ink: dark ? "#eaf3ff" : "#162f48"
@@ -69,10 +71,10 @@ ApplicationWindow {
     })
     readonly property real baseWidth: controller.widths.reduce((total, width) => total + width, 0)
     readonly property var groups: [
-        {label: "Д.П.", first: 0, count: 8},
-        {label: "П. / Р.", first: 8, count: 2},
-        {label: "З.", first: 10, count: 2},
-        {label: "П.", first: 12, count: 2}
+        {label: qsTr("Д.П."), first: 0, count: 8},
+        {label: qsTr("П. / Р."), first: 8, count: 2},
+        {label: qsTr("З."), first: 10, count: 2},
+        {label: qsTr("П.", "Purchases"), first: 12, count: 2}
     ]
     readonly property var enterFields: [3, 4, 5, 6, 7, 8, 9, 11, 12, 13]
     property string weightProblem: ""
@@ -199,11 +201,28 @@ ApplicationWindow {
             horizontalAlignment: Text.AlignHCenter
         }
         background: Rectangle {
-            radius: 7
+            radius: 10
             color: control.primary ? (control.down ? Qt.darker(win.actionFill, 1.08) : win.actionFill) :
                    (control.hovered || control.highlighted ? win.positiveBg : (control.quiet ? "transparent" : win.paper))
             opacity: control.enabled ? 1 : 0.45
             border.color: control.activeFocus ? win.accent : (control.quiet ? "transparent" : win.line)
+        }
+    }
+
+    component LedgerField: RoundedField {
+        id: field
+        focusBorder: win.accent
+        errorBorder: win.warningColor
+        placeholderTextColor: win.muted
+        Accessible.name: field.placeholderText
+    }
+
+    component LedgerMenu: Menu {
+        padding: 5
+        background: Rectangle {
+            radius: 12
+            color: win.paper
+            border.color: win.line
         }
     }
 
@@ -214,6 +233,14 @@ ApplicationWindow {
         checked: win.currentTheme === mode
         ButtonGroup.group: themeGroup
         onTriggered: win.showStatus(win.preferences.setTheme(mode))
+    }
+
+    component LanguageMenuItem: MenuItem {
+        required property string language
+        objectName: "language_" + language
+        checkable: true
+        checked: win.preferences && win.preferences.language === language
+        onTriggered: win.showStatus(win.preferences.setLanguage(language))
     }
 
     component LedgerTab: TabButton {
@@ -275,13 +302,13 @@ ApplicationWindow {
                 implicitWidth: 28
                 implicitHeight: 28
                 color: win.positiveBg
-                radius: 8
+                radius: 10
                 LedgerText { anchors.centerIn: parent; text: "≡"; color: win.accent; font.pixelSize: 17 }
             }
-            LedgerText { text: "Дневник"; font.pixelSize: 16; font.weight: Font.DemiBold }
+            LedgerText { text: qsTr("Дневник"); font.pixelSize: 16; font.weight: Font.DemiBold }
             LedgerText {
                 visible: win.testMode
-                text: "Тестова база"
+                text: qsTr("Тестова база")
                 color: win.accent
                 font.weight: Font.DemiBold
             }
@@ -300,11 +327,11 @@ ApplicationWindow {
 
                 LedgerTab {
                     objectName: "operationsTab"
-                    text: "Операции"
+                    text: qsTr("Операции")
                 }
                 LedgerTab {
                     objectName: "revisionsTab"
-                    text: "Ревизии"
+                    text: qsTr("Ревизии")
                     onPressed: {
                         if (checked)
                             win.revisionReport = win.controller.revisionReport()
@@ -312,7 +339,7 @@ ApplicationWindow {
                 }
                 LedgerTab {
                     objectName: "printTab"
-                    text: "Печат"
+                    text: qsTr("Печат")
                 }
             }
             Item { Layout.fillWidth: true }
@@ -325,7 +352,7 @@ ApplicationWindow {
                 Layout.preferredWidth: Math.min(implicitWidth, 142)
                 Layout.minimumWidth: 0
                 elide: Text.ElideRight
-                Accessible.name: (win.controller && win.controller.isAdministrator ? "Администратор · " : "Юзър · ") + text
+                Accessible.name: (win.controller && win.controller.isAdministrator ? qsTr("Администратор · ") : qsTr("Юзър · ")) + text
                 ToolTip.visible: userHover.hovered
                 ToolTip.text: Accessible.name
                 HoverHandler { id: userHover }
@@ -333,34 +360,34 @@ ApplicationWindow {
             LedgerButton {
                 id: settingsButton
                 objectName: "settingsButton"
-                text: "Настройки ▾"
-                Accessible.name: "Настройки"
+                text: qsTr("Настройки ▾")
+                Accessible.name: qsTr("Настройки")
                 highlighted: settingsMenu.opened
                 onClicked: settingsMenu.open()
 
-                Menu {
+                LedgerMenu {
                     id: settingsMenu
                     objectName: "settingsMenu"
                     width: 214
                     x: settingsButton.width - width
                     y: settingsButton.height + 4
 
-                    Menu {
+                    LedgerMenu {
                         objectName: "themeMenu"
-                        title: "Тема"
+                        title: qsTr("Тема")
                         width: 172
                         ButtonGroup { id: themeGroup }
-                        ThemeMenuItem { mode: "system"; text: "Като системата" }
-                        ThemeMenuItem { mode: "light"; text: "Светла" }
-                        ThemeMenuItem { mode: "dark"; text: "Тъмна" }
+                        ThemeMenuItem { mode: "system"; text: qsTr("Като системата") }
+                        ThemeMenuItem { mode: "light"; text: qsTr("Светла") }
+                        ThemeMenuItem { mode: "dark"; text: qsTr("Тъмна") }
                     }
-                    Menu {
+                    LedgerMenu {
                         objectName: "archiveMenu"
-                        title: "Архив"
+                        title: qsTr("Архив")
                         width: 242
                         MenuItem {
                             objectName: "createArchiveMenuItem"
-                            text: "Създай архив…"
+                            text: qsTr("Създай архив…")
                             onTriggered: {
                                 const folder = win.controller.archiveFolder()
                                 if (folder.toString())
@@ -371,7 +398,7 @@ ApplicationWindow {
                         MenuItem {
                             objectName: "restoreArchiveMenuItem"
                             enabled: !win.sessionEnabled || (win.controller && win.controller.canAuthorizePeriod)
-                            text: "Възстанови от архив…"
+                            text: qsTr("Възстанови от архив…")
                             onTriggered: {
                                 const automatic = win.controller.automaticArchive()
                                 if (automatic.toString())
@@ -382,22 +409,30 @@ ApplicationWindow {
                         }
                         MenuItem {
                             objectName: "openArchiveFolderMenuItem"
-                            text: "Отвори папката с архивите"
+                            text: qsTr("Отвори папката с архивите")
                             onTriggered: {
                                 const folder = win.controller.archiveFolder()
                                 if (!folder.toString() || !Qt.openUrlExternally(folder))
-                                    win.showStatus("Папката с архивите не може да се отвори.")
+                                    win.showStatus(qsTr("Папката с архивите не може да се отвори."))
                             }
                         }
                     }
+                    LedgerMenu {
+                        objectName: "languageMenu"
+                        title: qsTr("Език")
+                        width: 172
+                        ButtonGroup { id: languageGroup }
+                        LanguageMenuItem { language: "bg"; text: "Български"; ButtonGroup.group: languageGroup }
+                        LanguageMenuItem { language: "en"; text: "English"; ButtonGroup.group: languageGroup }
+                    }
                     MenuItem {
                         objectName: "updatesMenuItem"
-                        text: win.updates.supported ? "Обновяване…" : "За „Дневник“…"
+                        text: win.updates.supported ? qsTr("Обновяване…") : qsTr("За „Дневник“…")
                         onTriggered: updatesDialog.open()
                     }
                     MenuItem {
                         visible: win.sessionEnabled
-                        text: "Изход от профила"
+                        text: qsTr("Изход от профила")
                         onTriggered: {
                             if (Object.values(win.draft()).some(value => value.trim()))
                                 signOutDialog.open()
@@ -435,8 +470,8 @@ ApplicationWindow {
                         id: findNumberButton
                         objectName: "findNumberButton"
                         Layout.fillWidth: true
-                        text: "Търси"
-                        Accessible.name: "Търси по номер"
+                        text: qsTr("Търси")
+                        Accessible.name: qsTr("Търси по номер")
                         onClicked: numberSearch.open()
                         contentItem: RowLayout {
                             spacing: 6
@@ -451,13 +486,13 @@ ApplicationWindow {
                             Item { Layout.fillWidth: true }
                         }
                     }
-                    LedgerButton { text: "Днес"; visible: !win.controller.isToday; onClicked: win.showStatus(win.controller.goToday()) }
+                    LedgerButton { text: qsTr("Днес"); visible: !win.controller.isToday; onClicked: win.showStatus(win.controller.goToday()) }
                 }
 
                 Rectangle {
                     Layout.fillWidth: true
                     implicitHeight: dateStrip.implicitHeight + 6
-                    radius: 10
+                    radius: 14
                     color: win.paper
                     border.color: win.line
 
@@ -471,7 +506,7 @@ ApplicationWindow {
                             leftPadding: 7
                             rightPadding: 7
                             quiet: true
-                            Accessible.name: "Предишен ден"
+                            Accessible.name: qsTr("Предишен ден")
                             enabled: win.controller.dateIso > win.controller.periodStartIso
                             onClicked: win.showStatus(win.controller.shiftDay(-1))
                         }
@@ -485,7 +520,7 @@ ApplicationWindow {
                             text: win.controller.dateText
                             quiet: true
                             highlighted: datePicker.opened
-                            Accessible.name: "Избери дата, " + text
+                            Accessible.name: qsTr("Избери дата, ") + text
                             onClicked: datePicker.opened ? datePicker.close() : datePicker.open()
                             contentItem: RowLayout {
                                 spacing: 4
@@ -521,6 +556,7 @@ ApplicationWindow {
                                 todayIso: win.controller.todayIso
                                 earliestIso: win.controller.periodStartIso
                                 tones: win.calendarTones
+                                localeName: win.localeName
                                 onDateChosen: iso => {
                                     const problem = win.controller.goTo(iso)
                                     win.showStatus(problem)
@@ -537,7 +573,7 @@ ApplicationWindow {
                             rightPadding: 7
                             quiet: true
                             enabled: !win.controller.isToday
-                            Accessible.name: "Следващ ден"
+                            Accessible.name: qsTr("Следващ ден")
                             onClicked: win.showStatus(win.controller.shiftDay(1))
                         }
                     }
@@ -547,7 +583,7 @@ ApplicationWindow {
                     objectName: "balanceCard"
                     Layout.fillWidth: true
                     implicitHeight: 88
-                    radius: 11
+                    radius: 16
                     gradient: Gradient {
                         GradientStop { position: 0; color: win.cashCardStart }
                         GradientStop { position: 1; color: win.cashBackdrop }
@@ -556,7 +592,7 @@ ApplicationWindow {
                         anchors.fill: parent
                         anchors.margins: 12
                         spacing: 4
-                        LedgerText { text: "Каса към датата"; color: win.balanceMuted; font.pixelSize: 12 }
+                        LedgerText { text: qsTr("Каса към датата"); color: win.balanceMuted; font.pixelSize: 12 }
                         LedgerText {
                             Layout.fillWidth: true
                             text: win.controller.summary.cash
@@ -572,7 +608,7 @@ ApplicationWindow {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 2
-                    LedgerText { text: "Пренос от предния ден"; color: win.balanceMuted; font.pixelSize: 11 }
+                    LedgerText { text: qsTr("Пренос от предния ден"); color: win.balanceMuted; font.pixelSize: 11 }
                     LedgerText {
                         objectName: "carriedCash"
                         Layout.fillWidth: true
@@ -589,8 +625,8 @@ ApplicationWindow {
 
                 Repeater {
                     model: [
-                        {label: "Печалба", key: "profit"}, {label: "Откуп", key: "redemption"},
-                        {label: "Залози", key: "pledges"}, {label: "Лихви", key: "interest"}
+                        {label: qsTr("Печалба"), key: "profit"}, {label: qsTr("Откуп"), key: "redemption"},
+                        {label: qsTr("Залози"), key: "pledges"}, {label: qsTr("Лихви"), key: "interest"}
                     ]
                     delegate: RowLayout {
                         required property var modelData
@@ -619,7 +655,7 @@ ApplicationWindow {
             Layout.margins: 16
             spacing: 10
 
-            LedgerText { text: "Операции"; font.pixelSize: 23; font.weight: Font.DemiBold }
+            LedgerText { text: qsTr("Операции"); font.pixelSize: 23; font.weight: Font.DemiBold }
 
             Rectangle {
                 Layout.fillWidth: true
@@ -679,7 +715,7 @@ ApplicationWindow {
                                     LedgerText {
                                         anchors.fill: parent
                                         anchors.margins: 7
-                                        text: heading.modelData.title + (heading.modelData.side ? "  " + heading.modelData.side : "")
+                                        text: qsTranslate("Dnevnik", heading.modelData.title) + (heading.modelData.side ? "  " + heading.modelData.side : "")
                                         horizontalAlignment: heading.modelData.number ? Text.AlignRight : Text.AlignLeft
                                         color: heading.modelData.side === "+" ? win.positive : (heading.modelData.side === "−" ? win.negative : win.ink)
                                         font.weight: Font.DemiBold
@@ -687,7 +723,7 @@ ApplicationWindow {
                                     HoverHandler { id: headingHover }
                                     ToolTip.visible: headingHover.hovered
                                     ToolTip.delay: 400
-                                    ToolTip.text: modelData.label
+                                    ToolTip.text: qsTranslate("Dnevnik", modelData.label)
                                 }
                             }
                         }
@@ -785,7 +821,7 @@ ApplicationWindow {
                                                 ToolTip.delay: 400
                                                 ToolTip.text: text
                                                 onClicked: {
-                                                    noteDialog.title = bodyCell.modelData.label
+                                                    noteDialog.title = qsTranslate("Dnevnik", bodyCell.modelData.label)
                                                     noteText.text = text
                                                     noteDialog.open()
                                                 }
@@ -813,28 +849,21 @@ ApplicationWindow {
                                     divided: index !== 0
                                     groupDivider: modelData.split
 
-                                    TextField {
+                                    LedgerField {
                                         id: draftField
                                         objectName: "entry_" + inputCell.modelData.key
                                         anchors.fill: parent
                                         anchors.margins: 4
-                                        placeholderText: inputCell.modelData.title
-                                        Accessible.name: inputCell.modelData.label
-                                        Accessible.description: conflict ? win.weightProblem : ""
+                                        placeholderText: qsTranslate("Dnevnik", inputCell.modelData.title)
+                                        Accessible.name: qsTranslate("Dnevnik", inputCell.modelData.label)
+                                        Accessible.description: invalid ? win.weightProblem : ""
                                         horizontalAlignment: inputCell.modelData.number ? Text.AlignRight : Text.AlignLeft
                                         color: win.ink
-                                        placeholderTextColor: win.muted
                                         selectedTextColor: win.accentText
                                         selectionColor: win.actionFill
                                         selectByMouse: true
                                         font.pixelSize: 13
-                                        readonly property bool conflict: inputCell.modelData.weight && text.trim() !== "" && win.weightProblem !== ""
-                                        background: Rectangle {
-                                            color: win.paper
-                                            border.color: draftField.conflict ? win.warningColor : (draftField.activeFocus ? win.accent : win.line)
-                                            border.width: draftField.activeFocus || draftField.conflict ? 2 : 1
-                                            radius: 4
-                                        }
+                                        invalid: inputCell.modelData.weight && text.trim() !== "" && win.weightProblem !== ""
                                         onTextChanged: {
                                             if (inputCell.modelData.weight || inputCell.modelData.key === "marker")
                                                 win.weightProblem = win.controller.draftWeightError(win.draft())
@@ -857,7 +886,7 @@ ApplicationWindow {
                 LedgerText {
                     anchors.centerIn: parent
                     visible: operations.count === 0
-                    text: "Добави първата операция от полетата долу."
+                    text: qsTr("Добави първата операция от полетата долу.")
                     color: win.muted
                 }
             }
@@ -877,7 +906,7 @@ ApplicationWindow {
                 LedgerButton {
                     objectName: "saveOperationButton"
                     Layout.preferredHeight: 28
-                    text: win.controller.isToday ? "Запиши" : "Запиши за днес"
+                    text: win.controller.isToday ? qsTr("Запиши") : qsTr("Запиши за днес")
                     primary: true
                     onClicked: win.submit(-1)
                 }
@@ -891,6 +920,7 @@ ApplicationWindow {
         visible: navigationTabs.currentIndex === 2
         controller: win.controller
         tones: win.calendarTones
+        localeName: win.localeName
         warningColor: win.warningColor
         onPrintSent: message => {
             navigationTabs.setCurrentIndex(0)
@@ -913,7 +943,7 @@ ApplicationWindow {
             win.revisionFeedback = ""
             const pending = win.draft()
             if (Object.keys(pending).some(key => key !== "pledge" && pending[key].trim())) {
-                win.revisionFeedback = "Запази или изчисти незаписаната операция преди ревизията."
+                win.revisionFeedback = qsTr("Запази или изчисти незаписаната операция преди ревизията.")
                 return
             }
             win.revisionReport = win.controller.revisionReport()
@@ -922,12 +952,12 @@ ApplicationWindow {
         }
     }
 
-    Dialog {
+    RoundedDialog {
         id: closeRevisionDialog
         objectName: "closeRevisionDialog"
         anchors.centerIn: Overlay.overlay
         modal: true
-        title: "Нов период"
+        title: qsTr("Нов период")
         width: 430
         onOpened: {
             closeRevisionError.text = ""
@@ -959,28 +989,26 @@ ApplicationWindow {
             LedgerText {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: "Операциите от периода ще се изчистят. Касата и обобщението ще се запазят, а автоматичният архив ще се обнови."
+                text: qsTr("Операциите от периода ще се изчистят. Касата и обобщението ще се запазят, а автоматичният архив ще се обнови.")
             }
             LedgerText {
                 Layout.fillWidth: true
-                text: "Начална каса на новия период  " + (win.revisionReport.carry || "")
+                text: qsTr("Начална каса на новия период  ") + (win.revisionReport.carry || "")
                 font.weight: Font.DemiBold
             }
-            TextField {
+            LedgerField {
                 id: revisionUsername
                 objectName: "revisionUsername"
                 Layout.fillWidth: true
-                placeholderText: "Име на администратора"
-                Accessible.name: placeholderText
+                placeholderText: qsTr("Име на администратора")
                 maximumLength: 64
                 onAccepted: revisionPassword.forceActiveFocus()
             }
-            TextField {
+            LedgerField {
                 id: revisionPassword
                 objectName: "revisionPassword"
                 Layout.fillWidth: true
-                placeholderText: "Парола на администратора"
-                Accessible.name: placeholderText
+                placeholderText: qsTr("Парола на администратора")
                 maximumLength: 512
                 echoMode: TextInput.Password
                 onAccepted: closeRevisionDialog.confirm()
@@ -994,10 +1022,10 @@ ApplicationWindow {
             }
             RowLayout {
                 Layout.alignment: Qt.AlignRight
-                LedgerButton { text: "Отказ"; onClicked: closeRevisionDialog.close() }
+                LedgerButton { text: qsTr("Отказ"); onClicked: closeRevisionDialog.close() }
                 LedgerButton {
                     objectName: "confirmCloseRevision"
-                    text: "Нов период"
+                    text: qsTr("Нов период")
                     primary: true
                     onClicked: closeRevisionDialog.confirm()
                 }
@@ -1005,11 +1033,11 @@ ApplicationWindow {
         }
     }
 
-    Dialog {
+    RoundedDialog {
         id: signOutDialog
         anchors.centerIn: Overlay.overlay
         modal: true
-        title: "Изход от профила"
+        title: qsTr("Изход от профила")
         width: 390
 
         contentItem: ColumnLayout {
@@ -1017,13 +1045,13 @@ ApplicationWindow {
             LedgerText {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: "Имаш незаписани полета. Запази ги преди изход или потвърди изхода."
+                text: qsTr("Имаш незаписани полета. Запази ги преди изход или потвърди изхода.")
             }
             RowLayout {
                 Layout.alignment: Qt.AlignRight
-                LedgerButton { text: "Назад"; onClicked: signOutDialog.close() }
+                LedgerButton { text: qsTr("Назад"); onClicked: signOutDialog.close() }
                 LedgerButton {
-                    text: "Изход"
+                    text: qsTr("Изход")
                     onClicked: {
                         signOutDialog.close()
                         win.signOutRequested()
@@ -1033,23 +1061,23 @@ ApplicationWindow {
         }
     }
 
-    Dialog {
+    RoundedDialog {
         id: updatesDialog
         objectName: "updatesDialog"
         anchors.centerIn: Overlay.overlay
         modal: true
-        title: win.updates.supported ? "Обновяване" : "За „Дневник“"
+        title: win.updates.supported ? qsTr("Обновяване") : qsTr("За „Дневник“")
         width: 390
 
         contentItem: ColumnLayout {
             spacing: 12
-            LedgerText { text: win.preferences ? "Версия " + win.preferences.version : ""; color: win.muted }
+            LedgerText { text: win.preferences ? qsTr("Версия ") + win.preferences.version : ""; color: win.muted }
             ColumnLayout {
                 Layout.fillWidth: true
                 visible: win.updates.supported
                 spacing: 7
                 LedgerButton {
-                    text: win.updates.ready ? "Инсталирай обновяването" : "Провери за обновяване"
+                    text: win.updates.ready ? qsTr("Инсталирай обновяването") : qsTr("Провери за обновяване")
                     enabled: !win.updates.busy
                     primary: win.updates.ready
                     onClicked: {
@@ -1068,31 +1096,31 @@ ApplicationWindow {
             }
             LedgerButton {
                 Layout.alignment: Qt.AlignRight
-                text: "Затвори"
+                text: qsTr("Затвори")
                 onClicked: updatesDialog.close()
             }
         }
     }
 
-    Dialog {
+    RoundedDialog {
         id: installUpdateDialog
         anchors.centerIn: Overlay.overlay
         modal: true
-        title: "Инсталиране на обновяване"
+        title: qsTr("Инсталиране на обновяване")
         width: 390
 
         contentItem: ColumnLayout {
             spacing: 12
             LedgerText {
-                text: "Запази въведените операции, преди да продължиш. Инсталаторът ще направи архив, а след обновяването „Дневник“ ще се отвори отново."
+                text: qsTr("Запази въведените операции, преди да продължиш. Инсталаторът ще направи архив, а след обновяването „Дневник“ ще се отвори отново.")
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
             }
             RowLayout {
                 Layout.alignment: Qt.AlignRight
-                LedgerButton { text: "Отказ"; onClicked: installUpdateDialog.close() }
+                LedgerButton { text: qsTr("Отказ"); onClicked: installUpdateDialog.close() }
                 LedgerButton {
-                    text: "Обнови и отвори отново"
+                    text: qsTr("Обнови и отвори отново")
                     primary: true
                     onClicked: {
                         installUpdateDialog.close()
@@ -1110,12 +1138,13 @@ ApplicationWindow {
         controller: win.controller
         tones: ({
             surface: win.paper, text: win.ink, muted: win.muted, line: win.line,
-            accent: win.actionFill, onAccent: win.accentText, hover: win.positiveBg, alternate: win.alternate
+            accent: win.accent, selection: win.actionFill, onAccent: win.accentText,
+            hover: win.positiveBg, alternate: win.alternate
         })
         onMatchChosen: match => win.openMatch(match)
     }
 
-    Dialog {
+    RoundedDialog {
         id: editDialog
         anchors.centerIn: Overlay.overlay
         modal: true
@@ -1173,19 +1202,14 @@ ApplicationWindow {
                     property alias editor: editInput
                     Layout.fillWidth: true
                     LedgerText { text: editRow.modelData.label; Layout.preferredWidth: 175; wrapMode: Text.Wrap }
-                    TextField {
+                    LedgerField {
                         id: editInput
                         objectName: "edit_" + editRow.modelData.key
                         Layout.fillWidth: true
                         Accessible.name: editRow.modelData.label
                         text: editRow.modelData.text
                         color: win.ink
-                        readonly property bool conflict: editRow.modelData.weight && text.trim() !== "" && editDialog.weightProblem !== ""
-                        background: Rectangle {
-                            radius: 4
-                            color: win.paper
-                            border.color: editInput.conflict ? win.warningColor : (editInput.activeFocus ? win.accent : win.line)
-                        }
+                        invalid: editRow.modelData.weight && text.trim() !== "" && editDialog.weightProblem !== ""
                         onTextChanged: {
                             editDialog.errorText = ""
                             if (editRow.modelData.weight || editRow.modelData.key === "marker")
@@ -1206,15 +1230,15 @@ ApplicationWindow {
             RowLayout {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
-                LedgerButton { text: "Отказ"; onClicked: editDialog.close() }
-                LedgerButton { text: "Запиши"; primary: true; onClicked: editDialog.saveChanges() }
+                LedgerButton { text: qsTr("Отказ"); onClicked: editDialog.close() }
+                LedgerButton { text: qsTr("Запиши"); primary: true; onClicked: editDialog.saveChanges() }
             }
         }
     }
 
     NativeDialogs.FileDialog {
         id: backupPicker
-        title: "Създай архив на дневника"
+        title: qsTr("Създай архив на дневника")
         fileMode: NativeDialogs.FileDialog.SaveFile
         defaultSuffix: "sqlite3"
         options: NativeDialogs.FileDialog.DontConfirmOverwrite
@@ -1223,15 +1247,15 @@ ApplicationWindow {
     }
     NativeDialogs.FileDialog {
         id: restorePicker
-        title: "Избери архив на дневника"
-        nameFilters: ["SQLite (*.sqlite3 *.sqlite)", "Всички файлове (*)"]
+        title: qsTr("Избери архив на дневника")
+        nameFilters: ["SQLite (*.sqlite3 *.sqlite)", qsTr("Всички файлове (*)")]
         onAccepted: restoreConfirm.openFor(selectedFile)
     }
-    Dialog {
+    RoundedDialog {
         id: restoreConfirm
         anchors.centerIn: Overlay.overlay
         modal: true
-        title: "Възстановяване от архив"
+        title: qsTr("Възстановяване от архив")
         width: 430
         property url archive
 
@@ -1277,25 +1301,23 @@ ApplicationWindow {
             LedgerText {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
-                text: "Архивът ще замени операциите и историята на ревизиите. Преди възстановяването ще се запази копие на текущата база."
+                text: qsTr("Архивът ще замени операциите и историята на ревизиите. Преди възстановяването ще се запази копие на текущата база.")
             }
-            TextField {
+            LedgerField {
                 id: restoreUsername
                 objectName: "restoreAdministratorUsername"
                 visible: win.sessionEnabled
                 Layout.fillWidth: true
-                placeholderText: "Име на администратора"
-                Accessible.name: placeholderText
+                placeholderText: qsTr("Име на администратора")
                 maximumLength: 64
                 onAccepted: restorePassword.forceActiveFocus()
             }
-            TextField {
+            LedgerField {
                 id: restorePassword
                 objectName: "restoreAdministratorPassword"
                 visible: win.sessionEnabled
                 Layout.fillWidth: true
-                placeholderText: "Парола на администратора"
-                Accessible.name: placeholderText
+                placeholderText: qsTr("Парола на администратора")
                 echoMode: TextInput.Password
                 maximumLength: 512
                 onAccepted: restoreConfirm.confirmRestore()
@@ -1310,7 +1332,7 @@ ApplicationWindow {
             RowLayout {
                 Layout.fillWidth: true
                 LedgerButton {
-                    text: "Избери друг файл…"
+                    text: qsTr("Избери друг файл…")
                     quiet: true
                     onClicked: {
                         restoreConfirm.close()
@@ -1318,10 +1340,10 @@ ApplicationWindow {
                     }
                 }
                 Item { Layout.fillWidth: true }
-                LedgerButton { text: "Отказ"; onClicked: restoreConfirm.close() }
+                LedgerButton { text: qsTr("Отказ"); onClicked: restoreConfirm.close() }
                 LedgerButton {
                     objectName: "confirmRestoreArchive"
-                    text: "Възстанови"
+                    text: qsTr("Възстанови")
                     primary: true
                     onClicked: restoreConfirm.confirmRestore()
                 }
@@ -1329,12 +1351,11 @@ ApplicationWindow {
         }
     }
 
-    Dialog {
+    RoundedDialog {
         id: noteDialog
         anchors.centerIn: Overlay.overlay
         modal: true
         width: Math.min(440, win.width - 40)
-        standardButtons: Dialog.Close
         contentItem: ScrollView {
             implicitHeight: Math.max(54, Math.min(noteText.implicitHeight + 8, win.height / 2))
             TextArea {
@@ -1343,6 +1364,14 @@ ApplicationWindow {
                 selectByMouse: true
                 wrapMode: TextEdit.Wrap
                 color: win.ink
+                background: null
+            }
+        }
+        footer: DialogButtonBox {
+            alignment: Qt.AlignRight
+            LedgerButton {
+                text: qsTr("Затвори")
+                onClicked: noteDialog.close()
             }
         }
     }

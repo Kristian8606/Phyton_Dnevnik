@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 
 from PySide6.QtCore import QLockFile
 
+from .i18n import localized
 
 # Historical folder name used only to locate data before the rename.
 LEGACY_DIRECTORY_NAME = "KasovDnevnik"
@@ -38,7 +39,7 @@ def default_database(directory: Path, *, demo: bool = False) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     lock = QLockFile(str(database.with_suffix(".migration.lock")))
     if not lock.tryLock(5000):
-        raise OSError("Прехвърлянето на записите вече е стартирало.")
+        raise OSError(localized("Прехвърлянето на записите вече е стартирало."))
     try:
         if not database.exists():
             with TemporaryDirectory(dir=directory) as temporary:
