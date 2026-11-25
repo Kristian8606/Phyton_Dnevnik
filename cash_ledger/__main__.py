@@ -9,8 +9,8 @@ import sys
 from tempfile import TemporaryDirectory
 
 from PySide6.QtCore import QLockFile, QStandardPaths
-from PySide6.QtGui import QGuiApplication
 from PySide6.QtNetwork import QSslSocket
+from PySide6.QtWidgets import QApplication
 
 from . import __version__
 from .data_location import default_database, program_archive_directory
@@ -18,7 +18,7 @@ from .demo import prepare_demo
 from .session import DesktopSession
 
 
-def check_startup(app: QGuiApplication) -> int:
+def check_startup(app: QApplication) -> int:
     if sys.platform == "win32" and not QSslSocket.supportsSsl():
         return 1
     with TemporaryDirectory() as temporary:
@@ -41,7 +41,7 @@ def main() -> int:
     database_options.add_argument("--database", type=Path, help="Използвай друг SQLite файл.")
     database_options.add_argument("--demo", action="store_true", help="Отвори отделна база с тестови дни.")
     args = parser.parse_args()
-    app = QGuiApplication(sys.argv[:1])
+    app = QApplication(sys.argv[:1])
     app.setApplicationName("Dnevnik")
     app.setApplicationDisplayName("Дневник")
     app.setApplicationVersion(__version__)

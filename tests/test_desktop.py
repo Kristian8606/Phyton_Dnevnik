@@ -6,8 +6,9 @@ from datetime import date, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
-from PySide6.QtCore import QObject, QPointF, Qt, qInstallMessageHandler
+from PySide6.QtCore import QObject, QPointF, Qt, QUrl, qInstallMessageHandler
 from PySide6.QtQuick import QQuickItem, QQuickWindow
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtTest import QTest
@@ -199,6 +200,66 @@ class DesktopTests(unittest.TestCase):
             finally:
                 if engine.rootObjects():
                     engine.rootObjects()[0].close()
+
+    def test_print_tab_uses_today_or_an_inclusive_date_range(self):
+        app = QGuiApplication.instance() or QGuiApplication([])
+        with TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            database = directory / "ledger.sqlite3"
+            today = date.today()
+            previous = today - timedelta(days=1)
+            ledger = Ledger(database)
+            ledger.save(previous - timedelta(days=1), {"income": "400"})
+            ledger.save(previous, {"income": "125 първи ден"})
+            ledger.save(today, {"income": "60 днес"})
+            engine, controller = make_window(database)
+            window = engine.rootObjects()[0]
+            try:
+                app.processEvents()
+                root = window.contentItem()
+
+                def click(name):
+                    item = visual_item(root, name)
+                    self.assertIsNotNone(item, name)
+                    self.assertTrue(item.property("visible"), name)
+                    point = item.mapToScene(QPointF(item.width() / 2, item.height() / 2))
+                    QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                                     point.toPoint())
+                    app.processEvents()
+
+                click("printTab")
+                self.assertFalse(visual_item(root, "saveOperationButton").property("visible"))
+                self.assertTrue(visual_item(root, "printTodayOption").property("checked"))
+                with patch("cash_ledger.desktop.print_table", return_value=True) as print_table:
+                    click("printOperationsButton")
+                    columns, rows = print_table.call_args.args
+                    self.assertEqual(columns[0].heading, "Пр.")
+                    self.assertEqual(len(rows), 1)
+                    self.assertIn(("60,00", "", "днес"), rows[0])
+
+                    click("printPeriodOption")
+                    click("printFirstDate")
+                    if previous.month != today.month:
+                        click("calendarPreviousMonth")
+                    click("calendar_day_" + previous.isoformat())
+                    click("printOperationsButton")
+                    columns, rows = print_table.call_args.args
+                    self.assertEqual(columns[0].heading, "Дата")
+                    self.assertEqual(len(rows), 2)
+                    self.assertEqual([row[0][0] for row in rows],
+                                     [previous.strftime("%d.%m.%Y"), today.strftime("%d.%m.%Y")])
+                    self.assertIn(("125,00", "", "първи ден"), rows[0])
+
+                target = directory / "таблица.pdf"
+                url = QUrl.fromLocalFile(str(target))
+                invalid = controller.exportOperationsPdf(today.isoformat(), previous.isoformat(), url)
+                self.assertFalse(invalid["ok"])
+                self.assertFalse(target.exists())
+                result = controller.exportOperationsPdf(previous.isoformat(), today.isoformat(), url)
+                self.assertTrue(result["ok"], result.get("message"))
+                self.assertTrue(target.read_bytes().startswith(b"%PDF-"))
+            finally:
+                window.close()
 
     def test_number_search_opens_and_highlights_the_correct_block(self):
         app = QGuiApplication.instance() or QGuiApplication([])

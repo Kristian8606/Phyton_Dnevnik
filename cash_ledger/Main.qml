@@ -62,6 +62,11 @@ ApplicationWindow {
     readonly property color negativeBg: dark ? "#41312b" : "#faf0e8"
     readonly property color warningColor: dark ? "#f4a59b" : "#a5342c"
     readonly property color priceColor: dark ? "#a0b5cc" : "#637a92"
+    readonly property var calendarTones: ({
+        surface: win.paper, text: win.ink, muted: win.muted, line: win.line,
+        accent: win.accent, selection: win.actionFill, onAccent: win.accentText, hover: win.positiveBg,
+        shadow: win.dark ? "#55000000" : "#20192426"
+    })
     readonly property real baseWidth: controller.widths.reduce((total, width) => total + width, 0)
     readonly property var groups: [
         {label: "Д.П.", first: 0, count: 8},
@@ -300,6 +305,10 @@ ApplicationWindow {
                             win.revisionReport = win.controller.revisionReport()
                     }
                 }
+                LedgerTab {
+                    objectName: "printTab"
+                    text: "Печат"
+                }
             }
             Item { Layout.fillWidth: true }
             LedgerText {
@@ -393,7 +402,7 @@ ApplicationWindow {
 
     RowLayout {
         anchors.fill: parent
-        visible: !win.showingRevisions
+        visible: navigationTabs.currentIndex === 0
         spacing: 0
 
         Rectangle {
@@ -500,11 +509,7 @@ ApplicationWindow {
                                 selectedIso: win.controller.dateIso
                                 todayIso: win.controller.todayIso
                                 earliestIso: win.controller.periodStartIso
-                                tones: ({
-                                    surface: win.paper, text: win.ink, muted: win.muted, line: win.line,
-                                    accent: win.accent, selection: win.actionFill, onAccent: win.accentText, hover: win.positiveBg,
-                                    shadow: win.dark ? "#55000000" : "#20192426"
-                                })
+                                tones: win.calendarTones
                                 onDateChosen: iso => {
                                     const problem = win.controller.goTo(iso)
                                     win.showStatus(problem)
@@ -867,6 +872,15 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    OperationPrint {
+        objectName: "printScreen"
+        anchors.fill: parent
+        visible: navigationTabs.currentIndex === 2
+        controller: win.controller
+        tones: win.calendarTones
+        warningColor: win.warningColor
     }
 
     Revisions {

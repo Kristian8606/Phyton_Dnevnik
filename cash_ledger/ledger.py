@@ -1,5 +1,6 @@
 """Validation, exact arithmetic and SQLite storage for the desktop journal."""
 
+from collections import defaultdict
 from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -353,6 +354,16 @@ def _require_current_period(db: sqlite3.Connection, day: str) -> None:
         raise ValidationError("Датата е в приключен период. Обобщението е в „Ревизии“.")
 
 
+def _table_rows(records):
+    rows = []
+    operation_ids = []
+    for entries in zip_longest(*records.values()):
+        blocks = {block: entry for block, entry in zip(records, entries) if entry is not None}
+        operation_ids.append({block: entry[0] for block, entry in blocks.items()})
+        rows.append({key: cell for _, cells in blocks.values() for key, cell in cells.items()})
+    return rows, operation_ids
+
+
 class Ledger:
     def __init__(self, path: Path, *, archive_directory: Path | None = None):
         self.path = path
@@ -610,6 +621,20 @@ class Ledger:
                 queries + " ORDER BY day", {"first": first.isoformat(), "last": last.isoformat()}
             )]
 
+    def rows_between(self, first: date, last: date) -> list[tuple[date, dict[str, Cell]]]:
+        records = defaultdict(lambda: defaultdict(list))
+        bounds = (first.isoformat(), last.isoformat())
+        with self._connection() as db:
+            db.execute("BEGIN")
+            latest = _latest_revision(db)
+            if latest and bounds[0] < latest["day"]:
+                raise ValidationError("Избери дати от текущия период.")
+            for block in BLOCKS:
+                for row in db.execute(f"SELECT * FROM {block} WHERE day BETWEEN ? AND ? ORDER BY day, id", bounds):
+                    records[row["day"]][block].append((row["id"], _cells(block, row)))
+        return [(date.fromisoformat(day), row) for day, blocks in sorted(records.items())
+                for row in _table_rows(blocks)[0]]
+
     def find_number(self, query: str) -> list[NumberMatch]:
         needle = query.strip().casefold()
         if not needle:
@@ -641,12 +666,7 @@ class Ledger:
             )] for block in BLOCKS}
             balance = db.execute(BALANCE_SQL, {"day": iso}).fetchone()[0]
 
-        rows = []
-        operation_ids = []
-        for entries in zip_longest(*records.values()):
-            blocks = {block: entry for block, entry in zip(records, entries) if entry is not None}
-            operation_ids.append({block: entry[0] for block, entry in blocks.items()})
-            rows.append({key: cell for _, cells in blocks.values() for key, cell in cells.items()})
+        rows, operation_ids = _table_rows(records)
         totals = {key: sum(row[key].value for row in rows if key in row) for key in MONETARY}
         unmarked = [row for _, row in records["contracts"] if not row["marker"].value]
         incoming = totals["interest"] + totals["principal"] + totals["income"]
