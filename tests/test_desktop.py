@@ -2,7 +2,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -196,26 +196,34 @@ class DesktopTests(unittest.TestCase):
                     self.assertNotIn(label, labels)
                 point = button.mapToScene(QPointF(button.width() / 2, button.height() / 2))
                 self.assertGreater(point.y(), field.mapToScene(QPointF(0, field.height())).y())
-                field.setProperty("text", "25")
-                QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
-                                 point.toPoint())
-                self.assertEqual(Ledger(database).day(date.today()).summary["cash"], 2500)
-                self.assertEqual(controller.summary["incoming"], "+25,00 €")
-                backup = archives / "Последни операции.sqlite3"
-                self.assertTrue(backup.is_file())
-                self.assertEqual(Ledger(backup).day(date.today()).summary["cash"], 2500)
-                operation_id = Ledger(database).day(date.today()).operation_ids[0]["cash_movements"]
-                self.assertTrue(controller.openEdit("cash_movements", str(operation_id))["ok"])
-                self.assertTrue(controller.saveEdit({"income": "35"})["ok"])
-                self.assertEqual(Ledger(backup).day(date.today()).summary["cash"], 3500)
-                self.assertEqual(list(archives.iterdir()), [backup])
+                copies = archives / "Операции"
+                with patch("cash_ledger.desktop.datetime", create=True) as clock:
+                    clock.now.return_value = datetime(2026, 1, 15, 12, 30, 45, 123456)
+                    field.setProperty("text", "25")
+                    QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                                     point.toPoint())
+                    self.assertEqual(Ledger(database).day(date.today()).summary["cash"], 2500)
+                    self.assertEqual(controller.summary["incoming"], "+25,00 €")
+                    first = list(copies.glob("*.sqlite3"))
+                    self.assertEqual(len(first), 1)
+                    self.assertIn("2026-01-15_12-30-45", first[0].name)
+                    self.assertEqual(Ledger(first[0]).day(date.today()).summary["cash"], 2500)
+                    operation_id = Ledger(database).day(date.today()).operation_ids[0]["cash_movements"]
+                    self.assertTrue(controller.openEdit("cash_movements", str(operation_id))["ok"])
+                    self.assertTrue(controller.saveEdit({"income": "35"})["ok"])
+                all_copies = set(copies.iterdir())
+                self.assertEqual(len(all_copies), 2)
+                second, = all_copies - set(first)
+                self.assertEqual(Ledger(first[0]).day(date.today()).summary["cash"], 2500)
+                self.assertEqual(Ledger(second).day(date.today()).summary["cash"], 3500)
 
                 with patch("cash_ledger.desktop.replace_archive", side_effect=OSError):
                     result = controller.saveDraft({"income": "10"})
                 self.assertTrue(result["ok"])
                 self.assertTrue(result["warning"])
                 self.assertEqual(Ledger(database).day(date.today()).summary["cash"], 4500)
-                self.assertEqual(Ledger(backup).day(date.today()).summary["cash"], 3500)
+                self.assertEqual(set(copies.iterdir()), all_copies)
+                self.assertEqual(Ledger(second).day(date.today()).summary["cash"], 3500)
             finally:
                 if engine.rootObjects():
                     engine.rootObjects()[0].close()

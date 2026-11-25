@@ -1,4 +1,4 @@
-"""Create and verify SQLite snapshots before replacing a rolling archive."""
+"""Write verified, standalone SQLite snapshots."""
 
 from contextlib import closing
 from pathlib import Path
@@ -11,7 +11,6 @@ from .ledger import BLOCKS
 
 
 UPDATE_ARCHIVE_NAME = "Преди обновяване.sqlite3"
-OPERATIONS_ARCHIVE_NAME = "Последни операции.sqlite3"
 
 
 def backup_before_update(data_directory: Path, archive_directory: Path) -> Path | None:

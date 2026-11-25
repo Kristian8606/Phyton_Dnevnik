@@ -1,6 +1,6 @@
 """Qt bindings for the ledger screen."""
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 import sqlite3
 
@@ -12,7 +12,7 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from .ledger import BLOCKS, Ledger, MONETARY, SEARCH_LIMIT, ValidationError, WEIGHTS, weight_error
 
 from .preferences import Preferences
-from .snapshots import OPERATIONS_ARCHIVE_NAME, replace_archive
+from .snapshots import replace_archive
 from .table_print import PrintColumn, print_table
 from .updates import WindowsUpdates
 
@@ -366,19 +366,24 @@ class LedgerWindow(QObject):
 
     def _archive_saved_operations(self) -> str:
         database = self._ledger.path
-        filename = (OPERATIONS_ARCHIVE_NAME if database.name == "dnevnik.sqlite3"
-                    else f"{database.stem} – последни операции.sqlite3")
         try:
-            target = self._ledger.archive_directory() / filename
-            lock = QLockFile(str(target) + ".lock")
+            directory = self._ledger.archive_directory() / "Операции"
+            directory.mkdir(exist_ok=True)
+            lock = QLockFile(str(directory / ".archive.lock"))
             if not lock.tryLock(1500):
                 raise TimeoutError("Автоматичният архив е зает.")
             try:
+                prefix = f"{database.stem}-{datetime.now():%Y-%m-%d_%H-%M-%S-%f}"
+                target = directory / f"{prefix}.sqlite3"
+                sequence = 1
+                while target.exists():
+                    sequence += 1
+                    target = directory / f"{prefix}-{sequence}.sqlite3"
                 replace_archive(database, target)
             finally:
                 lock.unlock()
         except (OSError, sqlite3.Error):
-            return "Автоматичният архив не можа да се обнови."
+            return "Не можа да се създаде копие на базата след тази операция."
         return ""
 
     @Slot("QVariantMap", result="QVariantMap")
