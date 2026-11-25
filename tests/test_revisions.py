@@ -60,6 +60,26 @@ class RevisionTests(unittest.TestCase):
             self.assertEqual(reopened.day(end).carried_cash, 120000)
             self.assertEqual(reopened.day(end + timedelta(days=1)).carried_cash, 120000)
 
+    def test_automatic_backup_prefers_the_program_folder_and_falls_back_if_unavailable(self):
+        end = date(2026, 11, 25)
+        with TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            program_archives = parent / "program" / "Архиви"
+            data = parent / "data"
+            journal = Ledger(data / "ledger.sqlite3", archive_directory=program_archives)
+            journal.save(end, {"income": "100"})
+            backup = journal.close_revision(journal.revision_snapshot(end))
+            self.assertEqual(backup.parent, program_archives)
+            self.assertTrue(backup.is_file())
+
+            unavailable = parent / "unavailable"
+            unavailable.touch()
+            journal = Ledger(data / "ledger.sqlite3", archive_directory=unavailable)
+            journal.save(end, {"income": "10"})
+            backup = journal.close_revision(journal.revision_snapshot(end))
+            self.assertEqual(backup.parent, data / "Архиви")
+            self.assertTrue(backup.is_file())
+
     def test_stale_preview_and_failed_backup_leave_the_journal_intact(self):
         end = date(2026, 11, 25)
         with TemporaryDirectory() as temporary:

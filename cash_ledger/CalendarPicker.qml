@@ -4,6 +4,7 @@ import QtQuick.Layouts
 
 Popup {
     id: picker
+    required property QtObject controller
     required property string selectedIso
     required property string todayIso
     property string earliestIso: "0001-01-01"
@@ -19,6 +20,7 @@ Popup {
     ]
     property int shownYear: latestYear
     property int shownMonth: latestMonth
+    property var markedDays: []
 
     width: 326
     padding: 12
@@ -31,7 +33,7 @@ Popup {
     palette.base: tones.surface
     palette.text: tones.text
     palette.buttonText: tones.text
-    palette.highlight: tones.accent
+    palette.highlight: tones.selection
     palette.highlightedText: tones.onAccent
 
     function setMonth(year, month) {
@@ -39,6 +41,19 @@ Popup {
         const target = Math.max(12, Math.min(limit, year * 12 + month))
         shownYear = Math.floor(target / 12)
         shownMonth = target % 12
+        refreshActivity()
+    }
+
+    function refreshActivity() {
+        markedDays = controller ? controller.calendarDaysWithOperations(shownYear, shownMonth + 1) : []
+    }
+
+    Connections {
+        target: picker.controller
+        function onChanged() {
+            if (picker.opened)
+                picker.refreshActivity()
+        }
     }
 
     onAboutToShow: {
@@ -194,10 +209,12 @@ Popup {
                                                   String(model.day).padStart(2, "0")
                 readonly property bool picked: iso === picker.selectedIso
                 readonly property bool today: iso === picker.todayIso
+                readonly property bool hasOperations: picker.markedDays.includes(iso)
                 objectName: "calendar_day_" + iso
                 text: String(model.day)
                 Accessible.name: calendar.locale.toString(model.date, "d MMMM yyyy")
                 Accessible.selected: picked
+                Accessible.description: hasOperations ? "Има записани операции" : ""
                 enabled: iso >= picker.earliestIso && iso <= picker.todayIso
                 hoverEnabled: true
                 padding: 0
@@ -206,6 +223,7 @@ Popup {
                     text: day.text
                     color: day.picked ? picker.tones.onAccent :
                            (day.enabled && day.model.month === calendar.month ? picker.tones.text : picker.tones.muted)
+                    bottomPadding: day.hasOperations ? 4 : 0
                     opacity: day.enabled ? 1 : 0.48
                     font.pixelSize: 13
                     font.weight: day.picked || day.today ? Font.DemiBold : Font.Normal
@@ -214,9 +232,20 @@ Popup {
                 }
                 background: Rectangle {
                     radius: 7
-                    color: day.picked ? picker.tones.accent : (day.hovered ? picker.tones.hover : "transparent")
+                    color: day.picked ? picker.tones.selection : (day.hovered ? picker.tones.hover : "transparent")
                     border.color: day.activeFocus || (day.today && !day.picked) ?
                                   picker.tones.accent : "transparent"
+                }
+                Rectangle {
+                    objectName: "calendarActivityDot_" + day.iso
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 3
+                    visible: day.hasOperations
+                    width: 5
+                    height: 5
+                    radius: 2.5
+                    color: day.picked ? picker.tones.onAccent : picker.tones.accent
                 }
             }
         }

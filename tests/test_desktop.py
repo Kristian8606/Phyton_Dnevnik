@@ -254,6 +254,8 @@ class DesktopTests(unittest.TestCase):
 
                 self.assertEqual(controller.goTo("2024-02-12"), "")
                 click(item("datePickerButton"))
+                self.assertTrue(item("calendarActivityDot_2024-02-29").property("visible"))
+                self.assertFalse(item("calendarActivityDot_2024-02-28").property("visible"))
                 click(item("calendar_day_2024-02-29"))
                 self.assertEqual(controller.dateIso, "2024-02-29")
                 self.assertEqual(controller.summary["cash"], "25,00 €")

@@ -1,5 +1,6 @@
 """Qt bindings for the ledger screen."""
 
+from calendar import monthrange
 from datetime import date, timedelta
 from pathlib import Path
 import sqlite3
@@ -100,9 +101,10 @@ class DailyRows(QAbstractListModel):
 class LedgerWindow(QObject):
     changed = Signal()
 
-    def __init__(self, database: Path, parent=None, *, session_enabled=False, verify_admin=None):
+    def __init__(self, database: Path, parent=None, *, session_enabled=False, verify_admin=None,
+                 archive_directory=None):
         super().__init__(parent)
-        self._ledger = Ledger(database)
+        self._ledger = Ledger(database, archive_directory=archive_directory)
         self._session_enabled = session_enabled
         self._verify_admin = verify_admin
         self._day = date.today()
@@ -179,6 +181,18 @@ class LedgerWindow(QObject):
     @Property(bool, notify=changed)
     def isToday(self):
         return self._day == date.today()
+
+    @Slot(int, int, result="QStringList")
+    def calendarDaysWithOperations(self, year, month):
+        try:
+            first = date(year, month, 1)
+            last = first.toordinal() + monthrange(year, month)[1] - 1
+            return self._ledger.operation_days(
+                date.fromordinal(max(1, first.toordinal() - 6)),
+                date.fromordinal(min(date.max.toordinal(), last + 6)),
+            )
+        except (ValueError, sqlite3.Error):
+            return []
 
     @Slot(str, result=str)
     def goTo(self, value):
@@ -365,6 +379,13 @@ class LedgerWindow(QObject):
         refresh_error = self._select(day)
         return {"ok": True, "message": "Корекцията е записана. " + refresh_error}
 
+    @Slot(result=QUrl)
+    def archiveFolder(self):
+        try:
+            return QUrl.fromLocalFile(str(self._ledger.archive_directory()))
+        except OSError:
+            return QUrl()
+
     @Slot(QUrl, result="QVariantMap")
     def createArchive(self, url):
         if not url.isLocalFile():
@@ -402,11 +423,15 @@ class LedgerWindow(QObject):
                 "message": f"Архивът е възстановен. Предишната база е запазена в {safety.name}. {refresh_error}"}
 
 def make_window(database: Path, *, demo: bool = False, preferences: Preferences | None = None,
-                session_enabled: bool = False, visible: bool = True, verify_admin=None):
+                session_enabled: bool = False, visible: bool = True, verify_admin=None,
+                active_username: str = "", archive_directory: Path | None = None):
     if QQuickStyle.name() != "Basic":
         QQuickStyle.setStyle("Basic")
     engine = QQmlApplicationEngine()
-    controller = LedgerWindow(database, engine, session_enabled=session_enabled, verify_admin=verify_admin)
+    controller = LedgerWindow(
+        database, engine, session_enabled=session_enabled, verify_admin=verify_admin,
+        archive_directory=archive_directory,
+    )
     preferences = preferences or Preferences(database.parent / "settings.ini", engine)
     updates = WindowsUpdates(database.parent / "updates", engine)
     engine.setInitialProperties({
@@ -415,6 +440,7 @@ def make_window(database: Path, *, demo: bool = False, preferences: Preferences 
         "updates": updates,
         "testMode": demo,
         "sessionEnabled": session_enabled,
+        "activeUsername": active_username,
         "visible": visible,
     })
     engine.load(QUrl.fromLocalFile(str(Path(__file__).with_name("Main.qml"))))

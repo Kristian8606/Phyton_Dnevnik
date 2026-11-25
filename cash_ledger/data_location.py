@@ -3,6 +3,7 @@
 from contextlib import closing
 from pathlib import Path
 import sqlite3
+import sys
 from tempfile import TemporaryDirectory
 
 from PySide6.QtCore import QLockFile
@@ -10,6 +11,17 @@ from PySide6.QtCore import QLockFile
 
 # Historical folder name used only to locate data before the rename.
 LEGACY_DIRECTORY_NAME = "KasovDnevnik"
+
+
+def program_archive_directory() -> Path:
+    if not getattr(sys, "frozen", False):
+        return Path(__file__).resolve().parents[1] / "Архиви"
+    executable = Path(sys.executable).resolve()
+    if sys.platform == "darwin":
+        bundle = next((parent for parent in executable.parents if parent.suffix == ".app"), None)
+        if bundle:
+            return bundle.parent / "Дневник – Архиви"
+    return executable.parent / "Архиви"
 
 
 def default_database(directory: Path, *, demo: bool = False) -> Path:

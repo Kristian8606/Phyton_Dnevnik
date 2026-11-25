@@ -12,7 +12,7 @@ ApplicationWindow {
     minimumWidth: 340
     minimumHeight: 460
     title: "Дневник"
-    color: dark ? "#141e20" : "#edf3f3"
+    color: dark ? "#101b2a" : "#eaf5ff"
 
     readonly property bool registering: session !== null && session.registering
     readonly property bool addingUser: session !== null && session.addingUser
@@ -21,18 +21,19 @@ ApplicationWindow {
     readonly property bool dark: theme === "dark"
                                  || (theme === "system"
                                      && Application.styleHints.colorScheme === Qt.ColorScheme.Dark)
-    readonly property color ink: dark ? "#e6eeed" : "#192426"
-    readonly property color paper: dark ? "#1b2527" : "#ffffff"
-    readonly property color borderColor: dark ? "#38494a" : "#d9e2e2"
-    readonly property color accent: dark ? "#a1dfcc" : "#175d52"
-    readonly property color accentText: dark ? "#102b26" : "#ffffff"
+    readonly property color ink: dark ? "#eaf3ff" : "#162f48"
+    readonly property color paper: dark ? "#182536" : "#ffffff"
+    readonly property color borderColor: dark ? "#344c62" : "#c5d9ed"
+    readonly property color accent: dark ? "#a2cdf7" : "#245d93"
+    readonly property color actionFill: dark ? "#9dccf5" : "#acd6fa"
+    readonly property color accentText: "#102a43"
 
     palette.text: ink
     palette.windowText: ink
     palette.buttonText: ink
     palette.button: paper
     palette.base: paper
-    palette.highlight: accent
+    palette.highlight: actionFill
     palette.highlightedText: accentText
 
     function submit() {
@@ -163,7 +164,7 @@ ApplicationWindow {
                 }
                 background: Rectangle {
                     radius: 7
-                    color: submitButton.down ? Qt.darker(access.accent, 1.12) : access.accent
+                    color: submitButton.down ? Qt.darker(access.actionFill, 1.08) : access.actionFill
                     border.color: submitButton.activeFocus ? access.ink : "transparent"
                 }
             }

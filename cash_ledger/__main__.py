@@ -14,7 +14,7 @@ from PySide6.QtNetwork import QSslSocket
 
 from . import __version__
 from .accounts import REGISTRATION_CODE
-from .data_location import default_database
+from .data_location import default_database, program_archive_directory
 from .demo import prepare_demo
 from .session import DesktopSession
 
@@ -62,7 +62,9 @@ def main() -> int:
         return database
 
     try:
-        session = DesktopSession(data_directory, open_database, demo=args.demo)
+        session = DesktopSession(
+            data_directory, open_database, demo=args.demo, archive_directory=program_archive_directory(),
+        )
     except (OSError, sqlite3.Error) as exc:
         parser.exit(1, f"Потребителските профили са недостъпни. {exc}\n")
     if not session.start():

@@ -55,7 +55,9 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(opens, [database])
             self.assertFalse(gate.isVisible())
 
-            admin = session._work_engine.rootObjects()[0].property("controller")
+            journal = session._work_engine.rootObjects()[0]
+            self.assertEqual(journal.findChild(QObject, "activeUserLabel").property("text"), "Касиер")
+            admin = journal.property("controller")
             self.assertTrue(admin.isAdministrator)
             self.assertIn("Грешна парола", admin.restoreArchive(QUrl.fromLocalFile(str(database)), "wrong")["message"])
 
@@ -76,7 +78,9 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(opens, [database])
             submit("Втори", "different-pass")
             self.assertEqual(opens, [database, database])
-            member = session._work_engine.rootObjects()[0].property("controller")
+            journal = session._work_engine.rootObjects()[0]
+            self.assertEqual(journal.findChild(QObject, "activeUserLabel").property("text"), "Втори")
+            member = journal.property("controller")
             self.assertFalse(member.isAdministrator)
             result = member.restoreArchive(QUrl.fromLocalFile(str(database)), "test-secret")
             self.assertIn("Само администраторът", result["message"])

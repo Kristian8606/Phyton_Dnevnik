@@ -15,7 +15,8 @@ from .preferences import Preferences
 class DesktopSession(QObject):
     formChanged = Signal()
 
-    def __init__(self, data_directory: Path, database_for_session, *, demo=False, show_windows=True):
+    def __init__(self, data_directory: Path, database_for_session, *, demo=False, show_windows=True,
+                 archive_directory: Path | None = None):
         super().__init__()
         self._accounts = LocalAccounts(data_directory / "access" / "accounts.sqlite3")
         self._has_users = self._accounts.has_users()
@@ -23,6 +24,7 @@ class DesktopSession(QObject):
         self._database_for_session = database_for_session
         self._demo = demo
         self._show_windows = show_windows
+        self._archive_directory = archive_directory
         self._adding_user = False
         self._administrator = False
         self._work_engine = None
@@ -79,7 +81,8 @@ class DesktopSession(QObject):
             database = self._database_for_session()
             engine, controller = make_window(
                 database, demo=self._demo, preferences=self._preferences,
-                session_enabled=True, visible=self._show_windows,
+                session_enabled=True, visible=self._show_windows, active_username=username.strip(),
+                archive_directory=self._archive_directory,
                 verify_admin=(lambda secret: self._accounts.authenticate(username, secret)) if administrator else None,
             )
         except (OSError, sqlite3.Error) as exc:

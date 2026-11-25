@@ -3,6 +3,7 @@
 from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime
+import errno
 from itertools import zip_longest
 import os
 from pathlib import Path
@@ -353,8 +354,10 @@ def _require_current_period(db: sqlite3.Connection, day: str) -> None:
 
 
 class Ledger:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, archive_directory: Path | None = None):
         self.path = path
+        self._preferred_archive = archive_directory
+        self._archive_fallback = path.parent / "Архиви" if archive_directory else path.parent
         path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
@@ -438,6 +441,33 @@ class Ledger:
             db.execute(f"UPDATE {block} SET {columns} WHERE id = ? AND day = ?",
                        (*record[1:], operation_id, record[0]))
 
+    def archive_directory(self) -> Path:
+        if self._preferred_archive is not None:
+            try:
+                self._preferred_archive.mkdir(mode=0o700, parents=True, exist_ok=True)
+            except OSError:
+                pass
+            else:
+                if os.access(self._preferred_archive, os.W_OK | os.X_OK):
+                    return self._preferred_archive
+        self._archive_fallback.mkdir(mode=0o700, parents=True, exist_ok=True)
+        return self._archive_fallback
+
+    def _safety_backup(self, action: str, when: datetime) -> Path:
+        stamp = when.strftime("%Y%m%d-%H%M%S-%f")
+        name = f"{self.path.stem}-before-{action}-{stamp}.sqlite3"
+        directory = self.archive_directory()
+        target = directory / name
+        try:
+            self.backup(target)
+        except OSError as error:
+            if directory == self._archive_fallback or error.errno not in (errno.EACCES, errno.EPERM, errno.EROFS):
+                raise
+            self._preferred_archive = None
+            target = self.archive_directory() / name
+            self.backup(target)
+        return target
+
     def backup(self, target: Path) -> None:
         descriptor = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         os.close(descriptor)
@@ -465,10 +495,8 @@ class Ledger:
                     raise ValidationError("Файлът не е валиден архив на тази версия на дневника.")
                 if source.execute("SELECT opening_cash FROM settings WHERE singleton = 1").fetchone() is None:
                     raise ValidationError("В архива липсват настройките на дневника.")
-                stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-                safety = self.path.with_name(f"{self.path.stem}-before-restore-{stamp}.sqlite3")
                 destination.execute("BEGIN IMMEDIATE")
-                self.backup(safety)
+                safety = self._safety_backup("restore", datetime.now())
                 for table in ("settings", *BLOCKS, "revisions"):
                     destination.execute(f"DELETE FROM {table}")
                     if table == "revisions" and version == 1:
@@ -542,9 +570,7 @@ class Ledger:
                 raise ValidationError("Няма операции за приключване.")
 
             closed_at = datetime.now().astimezone()
-            stamp = closed_at.strftime("%Y%m%d-%H%M%S-%f")
-            safety = self.path.with_name(f"{self.path.stem}-before-revision-{stamp}.sqlite3")
-            self.backup(safety)
+            safety = self._safety_backup("revision", closed_at)
 
             labels = ", ".join(REVISION_FIELDS)
             placeholders = ", ".join("?" for _ in REVISION_FIELDS)
@@ -574,6 +600,15 @@ class Ledger:
                 history.append(CashDay(day, carried, closing - carried, closing))
                 carried = closing
         return history
+
+    def operation_days(self, first: date, last: date) -> list[str]:
+        with self._connection() as db:
+            queries = " UNION ".join(
+                f"SELECT day FROM {block} WHERE day BETWEEN :first AND :last" for block in BLOCKS
+            )
+            return [row["day"] for row in db.execute(
+                queries + " ORDER BY day", {"first": first.isoformat(), "last": last.isoformat()}
+            )]
 
     def find_number(self, query: str) -> list[NumberMatch]:
         needle = query.strip().casefold()

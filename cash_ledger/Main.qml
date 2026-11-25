@@ -11,6 +11,7 @@ ApplicationWindow {
     visible: true
     property bool testMode: false
     property bool sessionEnabled: false
+    property string activeUsername: ""
     property bool showingRevisions: false
     property var revisionReport: ({})
     property string revisionFeedback: ""
@@ -34,32 +35,34 @@ ApplicationWindow {
     palette.text: win.ink
     palette.button: win.paper
     palette.buttonText: win.ink
-    palette.highlight: win.accent
+    palette.highlight: win.actionFill
     palette.highlightedText: win.accentText
-    readonly property color ink: dark ? "#e6eeed" : "#192426"
-    readonly property color muted: dark ? "#a7b9b8" : "#516265"
-    readonly property color work: dark ? "#141e20" : "#f5f8f8"
-    readonly property color paper: dark ? "#1b2527" : "#ffffff"
-    readonly property color sidebar: dark ? "#192525" : "#edf3f3"
-    readonly property color alternate: dark ? "#202d2e" : "#f8fafa"
-    readonly property color headerSurface: dark ? "#263437" : "#f0f5f5"
-    readonly property color line: dark ? "#354847" : "#d9e2e2"
-    readonly property color thinLine: dark ? "#38494a" : "#e3ebeb"
-    readonly property color accent: dark ? "#a1dfcc" : "#175d52"
-    readonly property color accentText: dark ? "#102b26" : "#ffffff"
-    readonly property color cashBackdrop: dark ? "#22483f" : "#19483f"
-    readonly property color balancePane: dark ? "#102626" : "#103736"
-    readonly property color balanceLine: "#4c8a81"
-    readonly property color balanceInk: "#f3fbf8"
-    readonly property color balanceMuted: "#b6d9d3"
-    readonly property color matchSurface: dark ? "#244954" : "#e0f2fa"
-    readonly property color matchEdge: dark ? "#83c8dd" : "#237c95"
+    readonly property color ink: dark ? "#eaf3ff" : "#162f48"
+    readonly property color muted: dark ? "#b0c5db" : "#485e76"
+    readonly property color work: dark ? "#101b2a" : "#f2f8ff"
+    readonly property color paper: dark ? "#182536" : "#ffffff"
+    readonly property color sidebar: dark ? "#162d45" : "#e5f2fe"
+    readonly property color alternate: dark ? "#1e3045" : "#f6faff"
+    readonly property color headerSurface: dark ? "#253c52" : "#eaf4fe"
+    readonly property color line: dark ? "#3b556c" : "#c5d9ed"
+    readonly property color thinLine: dark ? "#344c62" : "#d8e6f4"
+    readonly property color accent: dark ? "#a2cdf7" : "#245d93"
+    readonly property color accentText: dark ? "#102a43" : "#12314d"
+    readonly property color cashBackdrop: dark ? "#224d74" : "#b6dcfc"
+    readonly property color balancePane: dark ? "#152c44" : "#e4f2ff"
+    readonly property color actionFill: dark ? "#9dccf5" : "#acd6fa"
+    readonly property color cashCardStart: dark ? "#2c608a" : "#d0eaff"
+    readonly property color balanceLine: dark ? "#4d7293" : "#9bbbd8"
+    readonly property color balanceInk: dark ? "#f1f7ff" : "#183451"
+    readonly property color balanceMuted: dark ? "#b9d7f2" : "#3a5773"
+    readonly property color matchSurface: dark ? "#244b68" : "#dcedff"
+    readonly property color matchEdge: dark ? "#8fcbfa" : "#2669a4"
     readonly property color positive: dark ? "#a6e1c4" : "#13614d"
-    readonly property color positiveBg: dark ? "#243d35" : "#e6f2ee"
+    readonly property color positiveBg: dark ? "#213e56" : "#e3f1fe"
     readonly property color negative: dark ? "#f5bb96" : "#854a26"
     readonly property color negativeBg: dark ? "#41312b" : "#faf0e8"
     readonly property color warningColor: dark ? "#f4a59b" : "#a5342c"
-    readonly property color priceColor: dark ? "#97acab" : "#627476"
+    readonly property color priceColor: dark ? "#a0b5cc" : "#637a92"
     readonly property real baseWidth: controller.widths.reduce((total, width) => total + width, 0)
     readonly property var groups: [
         {label: "Договори и продажби", first: 0, count: 8},
@@ -194,7 +197,7 @@ ApplicationWindow {
         }
         background: Rectangle {
             radius: 7
-            color: control.primary ? (control.down ? Qt.darker(win.accent, 1.1) : win.accent) :
+            color: control.primary ? (control.down ? Qt.darker(win.actionFill, 1.08) : win.actionFill) :
                    (control.hovered || control.highlighted ? win.positiveBg : (control.quiet ? "transparent" : win.paper))
             opacity: control.enabled ? 1 : 0.45
             border.color: control.activeFocus ? win.accent : (control.quiet ? "transparent" : win.line)
@@ -280,6 +283,20 @@ ApplicationWindow {
                     }
                 }
             }
+            LedgerText {
+                objectName: "activeUserLabel"
+                visible: win.activeUsername.length > 0
+                text: win.activeUsername
+                color: win.muted
+                font.weight: Font.DemiBold
+                Layout.preferredWidth: Math.min(implicitWidth, 142)
+                Layout.minimumWidth: 0
+                elide: Text.ElideRight
+                Accessible.name: "Влязъл потребител: " + text
+                ToolTip.visible: userHover.hovered
+                ToolTip.text: Accessible.name
+                HoverHandler { id: userHover }
+            }
             LedgerButton {
                 id: settingsButton
                 objectName: "settingsButton"
@@ -307,17 +324,31 @@ ApplicationWindow {
                     Menu {
                         objectName: "archiveMenu"
                         title: "Архив"
-                        width: 210
+                        width: 242
                         MenuItem {
                             objectName: "createArchiveMenuItem"
                             text: "Създай архив…"
-                            onTriggered: backupPicker.open()
+                            onTriggered: {
+                                const folder = win.controller.archiveFolder()
+                                if (folder.toString())
+                                    backupPicker.currentFolder = folder
+                                backupPicker.open()
+                            }
                         }
                         MenuItem {
                             objectName: "restoreArchiveMenuItem"
                             enabled: !win.sessionEnabled || (win.controller && win.controller.isAdministrator)
                             text: "Възстанови от архив…"
                             onTriggered: restorePicker.open()
+                        }
+                        MenuItem {
+                            objectName: "openArchiveFolderMenuItem"
+                            text: "Отвори папката с архивите"
+                            onTriggered: {
+                                const folder = win.controller.archiveFolder()
+                                if (!folder.toString() || !Qt.openUrlExternally(folder))
+                                    win.showStatus("Папката с архивите не може да се отвори.")
+                            }
                         }
                     }
                     MenuItem {
@@ -452,12 +483,13 @@ ApplicationWindow {
                             CalendarPicker {
                                 id: datePicker
                                 parent: dateButton
+                                controller: win.controller
                                 selectedIso: win.controller.dateIso
                                 todayIso: win.controller.todayIso
                                 earliestIso: win.controller.periodStartIso
                                 tones: ({
                                     surface: win.paper, text: win.ink, muted: win.muted, line: win.line,
-                                    accent: win.accent, onAccent: win.accentText, hover: win.positiveBg,
+                                    accent: win.accent, selection: win.actionFill, onAccent: win.accentText, hover: win.positiveBg,
                                     shadow: win.dark ? "#55000000" : "#20192426"
                                 })
                                 onDateChosen: iso => {
@@ -488,7 +520,7 @@ ApplicationWindow {
                     implicitHeight: 88
                     radius: 11
                     gradient: Gradient {
-                        GradientStop { position: 0; color: "#245e55" }
+                        GradientStop { position: 0; color: win.cashCardStart }
                         GradientStop { position: 1; color: win.cashBackdrop }
                     }
                     ColumnLayout {
@@ -764,7 +796,7 @@ ApplicationWindow {
                                         color: win.ink
                                         placeholderTextColor: win.muted
                                         selectedTextColor: win.accentText
-                                        selectionColor: win.accent
+                                        selectionColor: win.actionFill
                                         selectByMouse: true
                                         font.pixelSize: 13
                                         readonly property bool conflict: inputCell.modelData.weight && text.trim() !== "" && win.weightProblem !== ""
@@ -879,7 +911,7 @@ ApplicationWindow {
         administrator: win.controller && win.controller.isAdministrator
         tones: ({
             ink: win.ink, paper: win.paper, header: win.headerSurface, line: win.line,
-            alternate: win.alternate, accent: win.accent, accentText: win.accentText
+            alternate: win.alternate, accent: win.actionFill, accentText: win.accentText
         })
         onCloseRequested: {
             win.revisionFeedback = ""
@@ -1068,7 +1100,7 @@ ApplicationWindow {
         controller: win.controller
         tones: ({
             surface: win.paper, text: win.ink, muted: win.muted, line: win.line,
-            accent: win.accent, onAccent: win.accentText, hover: win.positiveBg, alternate: win.alternate
+            accent: win.actionFill, onAccent: win.accentText, hover: win.positiveBg, alternate: win.alternate
         })
         onMatchChosen: match => win.openMatch(match)
     }
