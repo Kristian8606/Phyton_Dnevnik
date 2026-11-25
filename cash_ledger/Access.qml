@@ -77,6 +77,88 @@ ApplicationWindow {
         }
     }
 
+    RecoveryCodeDialog {
+        id: savedCode
+        accountSession: access.session
+    }
+
+    Dialog {
+        id: resetDialog
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(440, access.width - 32)
+        modal: true
+        title: "Нулирай администратора"
+
+        function submitReset() {
+            const result = access.session.resetAdministrator(recoveryCode.text, newUsername.text, newPassword.text)
+            if (result.error) {
+                resetError.text = result.error
+                return
+            }
+            close()
+            access.session.cancelRegistration()
+            access.clearForm()
+            savedCode.present(result.code)
+        }
+
+        onOpened: recoveryCode.forceActiveFocus()
+        onClosed: {
+            recoveryCode.clear()
+            newUsername.clear()
+            newPassword.clear()
+            resetError.text = ""
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 8
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "Въведи запазения код и данните за новия администратор. Служителите и записите в дневника се запазват."
+            }
+            AccountField {
+                id: recoveryCode
+                objectName: "resetRecoveryCode"
+                placeholderText: "Код за възстановяване"
+                maximumLength: 128
+                echoMode: TextInput.Password
+                onAccepted: newUsername.forceActiveFocus()
+            }
+            AccountField {
+                id: newUsername
+                objectName: "resetUsername"
+                placeholderText: "Ново потребителско име"
+                maximumLength: 64
+                onAccepted: newPassword.forceActiveFocus()
+            }
+            AccountField {
+                id: newPassword
+                objectName: "resetPassword"
+                placeholderText: "Нова парола"
+                maximumLength: 512
+                echoMode: TextInput.Password
+                onAccepted: resetDialog.submitReset()
+            }
+            Label {
+                id: resetError
+                objectName: "resetError"
+                Layout.fillWidth: true
+                visible: text.length > 0
+                wrapMode: Text.WordWrap
+                color: access.dark ? "#f4a59b" : "#a5342c"
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                Button { text: "Отказ"; onClicked: resetDialog.close() }
+                Button {
+                    objectName: "confirmAdministratorReset"
+                    text: "Потвърди"
+                    onClicked: resetDialog.submitReset()
+                }
+            }
+        }
+    }
+
     Rectangle {
         anchors.centerIn: parent
         width: Math.min(360, parent.width - 28)
@@ -181,6 +263,14 @@ ApplicationWindow {
                         access.session.add_user()
                     access.clearForm()
                 }
+            }
+            Button {
+                objectName: "resetAdministratorButton"
+                visible: access.session && access.session.canResetAdministrator
+                Layout.alignment: Qt.AlignHCenter
+                text: "Нулирай администратора…"
+                flat: true
+                onClicked: resetDialog.open()
             }
         }
     }

@@ -12,6 +12,7 @@ ApplicationWindow {
     property bool testMode: false
     property bool sessionEnabled: false
     property string activeUsername: ""
+    property QtObject accountSession: null
     property bool showingRevisions: false
     property var revisionReport: ({})
     property string revisionFeedback: ""
@@ -308,7 +309,7 @@ ApplicationWindow {
                 Menu {
                     id: settingsMenu
                     objectName: "settingsMenu"
-                    width: 192
+                    width: 214
                     x: settingsButton.width - width
                     y: settingsButton.height + 4
 
@@ -361,6 +362,12 @@ ApplicationWindow {
                         visible: win.sessionEnabled
                         text: "Нов потребител…"
                         onTriggered: win.registrationRequested()
+                    }
+                    MenuItem {
+                        objectName: "recoveryCodeMenuItem"
+                        visible: win.accountSession && win.controller.isAdministrator
+                        text: "Код за възстановяване…"
+                        onTriggered: recoverySettings.open()
                     }
                     MenuItem {
                         visible: win.sessionEnabled
@@ -923,6 +930,71 @@ ApplicationWindow {
             win.revisionReport = win.controller.revisionReport()
             if (win.revisionReport.ok && win.revisionReport.operationCount > 0)
                 closeRevisionDialog.open()
+        }
+    }
+
+    RecoveryCodeDialog {
+        id: administratorRecoveryCode
+        accountSession: win.accountSession
+    }
+
+    Connections {
+        target: win.accountSession
+        function onRecoveryCodeReady(code) {
+            recoverySettings.close()
+            administratorRecoveryCode.present(code)
+        }
+    }
+
+    Dialog {
+        id: recoverySettings
+        anchors.centerIn: Overlay.overlay
+        width: 410
+        modal: true
+        title: "Код за възстановяване"
+
+        function replaceCode() {
+            recoverySettingsError.text = win.accountSession.replaceRecoveryCode(recoverySettingsPassword.text)
+        }
+
+        onOpened: recoverySettingsPassword.forceActiveFocus()
+        onClosed: {
+            recoverySettingsPassword.clear()
+            recoverySettingsError.text = ""
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 10
+            LedgerText {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "Въведи администраторската парола, за да създадеш нов код. Предишният код ще стане невалиден."
+            }
+            TextField {
+                id: recoverySettingsPassword
+                Layout.fillWidth: true
+                placeholderText: "Парола на администратора"
+                Accessible.name: placeholderText
+                echoMode: TextInput.Password
+                maximumLength: 512
+                onAccepted: recoverySettings.replaceCode()
+            }
+            LedgerText {
+                id: recoverySettingsError
+                Layout.fillWidth: true
+                visible: text.length > 0
+                wrapMode: Text.WordWrap
+                color: win.warningColor
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                LedgerButton { text: "Отказ"; onClicked: recoverySettings.close() }
+                LedgerButton {
+                    text: "Създай нов код"
+                    primary: true
+                    onClicked: recoverySettings.replaceCode()
+                }
+            }
         }
     }
 
