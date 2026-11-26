@@ -29,6 +29,50 @@ def visual_item(root: QQuickItem, name: str) -> QQuickItem | None:
 
 
 class DesktopTests(unittest.TestCase):
+    def test_open_journal_rolls_over_at_midnight_and_carries_the_cash(self):
+        app = QGuiApplication.instance() or QGuiApplication([])
+        first_day = date(2026, 11, 25)
+        current_day = first_day
+
+        class LocalDate(date):
+            @classmethod
+            def today(cls):
+                return current_day
+
+        with TemporaryDirectory() as temporary, patch("cash_ledger.desktop.date", LocalDate):
+            path = Path(temporary) / "ledger.sqlite3"
+            ledger = Ledger(path)
+            ledger.save(first_day, {"income": "1225", "cost": "25"})
+            engine, controller = make_window(path)
+            window = engine.rootObjects()[0]
+            try:
+                app.processEvents()
+                income = visual_item(window.contentItem(), "entry_income")
+                income.setProperty("text", "10")
+                self.assertEqual(controller.dateIso, first_day.isoformat())
+                self.assertEqual(controller.rows.rowCount(), 1)
+                operation_id = ledger.day(first_day).operation_ids[0]["cash_movements"]
+                self.assertTrue(controller.openEdit("cash_movements", str(operation_id))["ok"])
+
+                current_day += timedelta(days=1)
+                QTest.qWait(1250)
+
+                self.assertEqual(controller.dateIso, current_day.isoformat())
+                self.assertTrue(controller.isToday)
+                self.assertEqual(controller.rows.rowCount(), 0)
+                self.assertEqual(controller.summary["carried"], "1\u00a0200,00 €")
+                self.assertEqual(controller.summary["cash"], controller.summary["carried"])
+                self.assertEqual(income.property("text"), "10")
+                self.assertEqual(len(ledger.day(first_day).rows), 1)
+                self.assertEqual(ledger.revision_history(), [])
+
+                self.assertTrue(controller.saveEdit({"income": "1250", "cost": "25"})["ok"])
+                self.assertEqual(controller.dateIso, current_day.isoformat())
+                self.assertEqual(controller.rows.rowCount(), 0)
+                self.assertEqual(controller.summary["carried"], "1\u00a0225,00 €")
+            finally:
+                window.close()
+
     def test_changing_language_translates_the_open_journal_without_losing_the_draft(self):
         app = QGuiApplication.instance() or QGuiApplication([])
         with TemporaryDirectory() as temporary:

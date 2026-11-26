@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from pathlib import Path
 import sqlite3
 
-from PySide6.QtCore import QByteArray, Property, QAbstractListModel, QLocale, QModelIndex, QObject, Qt, QUrl, Signal, Slot
+from PySide6.QtCore import QByteArray, Property, QAbstractListModel, QLocale, QModelIndex, QObject, Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QFont, QFontMetrics
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -110,7 +110,8 @@ class LedgerWindow(QObject):
         self._session_enabled = session_enabled
         self._is_administrator = is_administrator
         self._verify_admin = verify_admin
-        self._day = date.today()
+        self._last_local_day = date.today()
+        self._day = self._last_local_day
         self._rows = DailyRows(self)
         self._summary = {}
         self._widths = []
@@ -119,6 +120,15 @@ class LedgerWindow(QObject):
         self._period_start = date.min
         self._revision_preview = None
         self._refresh()
+        self._day_timer = QTimer(self)
+        self._day_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self._day_timer.timeout.connect(self._follow_local_day)
+        self._day_timer.start(1000)
+
+    def _follow_local_day(self):
+        today = date.today()
+        if today != self._last_local_day and not self._select(today):
+            self._last_local_day = today
 
     def _refresh(self):
         self._period_start = self._ledger.current_period_start() or date.min
@@ -436,7 +446,7 @@ class LedgerWindow(QObject):
             return {"ok": False, "message": localized(STORE_ERROR) + str(error)}
         self._editing = None
         archive_error = self._archive_saved_operations()
-        refresh_error = self._select(day)
+        refresh_error = self._select(self._day)
         return {"ok": True, "warning": bool(archive_error or refresh_error),
                 "message": " ".join(filter(None, (localized("Корекцията е записана."), archive_error, refresh_error)))}
 
